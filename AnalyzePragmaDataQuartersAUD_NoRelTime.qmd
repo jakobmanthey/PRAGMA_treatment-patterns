@@ -1,0 +1,868 @@
+---
+title: "Pragma Analysis"
+author: "Jakob & Kilian"
+format:
+  html:
+    self-contained: true
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    code-fold: true
+    code-tools: true
+    code-link: true
+    toc: true
+    df-print: paged
+    crossrefs-hover: true	
+
+editor: visual
+---
+
+# What Do I Do?
+
+This document produces an analysis using LCA and Hierarchical Clustering with variable class/cluster numbers (k). It relies on data in the shape of sequence_data_for_kilian.csv with an aud.date column
+
+The Results of the Models are visualized for easy interpretability
+
+## LCA on binary treatment sequences
+
+First, we import our preprocessed Data containing treatment series on a relative timescale
+
+```{r}
+#| message: false
+
+library(here)
+library(venneuler)
+library(dendextend)
+library(fs)
+library(poLCA) # this package is a nightmare. It loads a select() function which overwrites tidyverse select() if tidyverse is loaded first or already attached to namespace
+library(vegan)
+library(timetk)
+library(tidyverse)
+library(here)
+library(furrr)
+library(vroom)
+here::i_am("AnalyzePragmaDataQuartersAUD_NoRelTime.qmd")
+
+```
+
+```{r}
+# set analysis parameters
+analysis_vars = c("qwt", "inpat", "reha", "psych_short","psych_full", "medi", "bado") # set the variables which should be plotted and used within the analysis.
+obs_period = "24m" # observational period
+resol = "quarter" # time resolution for plotting purposes starting from aud date. 
+# possible vals: "day", "week", "month", "quarter", "halfyear", "year"
+save = T # save transformed dataframe as cache in order to reexecute script faster
+load_if_possible = T # if saved transformed df is found, load instead of compute
+render = T # overrides console prompting for laod if possible in order to render document
+classnum = 6# Which model should be used for subsequent analysis? (number equals classes of the desired model)
+```
+
+```{r}
+getwd()
+dat = read_rds(here("input","sequence_data_240513","4_data_AUD diagnosis and intervention sequences_2024-05-13.rds")) 
+# create an interv_id running within treatment type instead of across treatment types
+dat = dat %>% left_join(dat %>%  
+  select(pragmaid, period, interv.type, interv_id) %>%
+  drop_na() %>%
+  group_by(pragmaid, period, interv.type) %>%
+  mutate(interv_id_inner = 1:n()) %>%
+  ungroup()
+)
+
+source(here("upsample_daily_utils.r")) # load up/downsampling and utility functions
+
+
+
+# this takes a pretty long time (5minutes) on machine with 16 logical cores and 32gig ram. Significantly speeds up when all indivs who had no intervention are excluded from data before upsampling. # Results can be also precomputed via save and load_if_possible/ render
+
+dat_qwt = get_treatment_series_at_resolution(dat,
+                                             period = obs_period, # observation period
+                                             resol = resol, # timestep resolution
+                                             event = "aud", # event to start treatment series. currently does nothing (always set to aud)
+                                             save = T, # save result when computed?
+                                             load_if_possible = T, # load if same config exists in cache folder, prompts user in order to check if right file is laoded
+                                             render = T, # forces load without prompting (ovverrides prompt and just chooses the most likely one)
+                                             only_intervs = T) %>% 
+  filter(interv.any.allquarters == T) # only use cases where an intervention happened because LCA has problems fitting all the zero cases
+
+
+
+```
+
+Pivoting it into a wide format implicitly creates time sensitive dummy variables:
+
+```{r}
+# transform into wide format, such that the time is coded in dummy variables (qwt_t1, qwt_t2 ...)
+dat_qwt_wide = dat_qwt %>%
+  group_by(pragmaid, rel_time) %>% 
+  mutate(psych = any(psych_short, psych_full)) %>%
+  ungroup() %>% 
+  select(pragmaid,
+         rel_time, 
+         all_of(analysis_vars)
+         ) %>% 
+  pivot_wider(id_cols = pragmaid,
+              names_from = rel_time,
+              values_from = all_of(analysis_vars)) %>% 
+  arrange(pragmaid)
+#head(dat_qwt_wide)
+
+
+
+
+```
+
+For the poLCA package, data must occur in categorical levels, in increments from 1 to max level (in our case 2 since data is binary)
+
+Now, create the formula and run LCA models on the dataset. We will try a 2-7 class solutions:
+
+```{r}
+#| label: LCA-Outputs
+
+f  = as.formula(paste0("cbind(",paste(analysis_vars, collapse = ","), ")~1" ))
+# should equal:
+# f = cbind(qwt, reha, medi, psych_short, psych_full, inpat, bado) ~ 1 # formula for LCA clustering
+
+# poLCA needs variables to increment from 1 to max level
+# 1 = No
+# 2 = Yes
+dat_qwt_num = dat_qwt %>%
+  group_by(pragmaid) %>%
+  summarize_at(analysis_vars, ~any(.x) + 1)
+
+
+set.seed(341)
+m2 = poLCA::poLCA(f, dat_qwt_num, nclass = 2, graph = T, maxiter = 100000, nrep = 5)
+m3 = poLCA::poLCA(f, dat_qwt_num, nclass = 3, graph = T, maxiter = 100000, nrep = 5)
+m4 = poLCA::poLCA(f, dat_qwt_num, nclass = 4, graph = T, maxiter = 100000, nrep = 5)
+m5 = poLCA::poLCA(f, dat_qwt_num, nclass = 5, graph = T, maxiter = 100000, nrep = 5)
+m6 = poLCA::poLCA(f, dat_qwt_num, nclass = 6, graph = T, maxiter = 100000, nrep = 5)
+m7 = poLCA::poLCA(f, dat_qwt_num, nclass = 7, graph = T, maxiter = 100000, nrep = 5)
+
+# choose the n class solution for both models, the lca and the hierarchical clusterings
+dat_qwt_num$predclass = eval(parse(text = paste0("m", classnum, "$predclass")))
+dat_qwt_num %>% 
+  select(pragmaid, predclass) %>%
+  write_csv(here("output", "sequence_data_24m_monthly_lca_results.csv"))
+
+```
+
+## Visualize LCA results without 3D
+
+Take a look at the proportion of individuals using a service over time, for the different clusters identified by the lca. This corresponds somewhat to binary "typical" group trajectories.
+
+```{r}
+#| title: Naive Frequency Visualization of LCA Results
+#| warning: false
+#| include: false
+
+label_fn = function(dat){
+
+frac = data.frame(pragmaid = dat$pragmaid, predclass = dat$predclass %>% as.factor()) %>%
+  group_by(predclass) %>% 
+  summarize(n=n_distinct(pragmaid)) %>%
+  mutate(frac = str_c(round(n/sum(n),3)*100, "%"), 
+         predclass = as.integer(predclass))
+  #print(frac)
+  res = c()
+  for(i in 1:nrow(frac)){
+  res[i] = paste0("C" ,
+                  frac[i, ]$predclass,
+                  ", n = ",
+                  frac[i, ]$n,
+                  ", (",
+                  frac[i, ]$frac,
+                  ")"
+  )
+  
+  }
+  names(res) = frac %>% select(predclass) %>% pull()
+  return(res) 
+}
+
+dat_qwt_num %>%
+  select(pragmaid, predclass) %>%
+  left_join(dat_qwt) %>%
+  group_by(predclass, rel_time) %>% 
+  summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x) ) %>% 
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "variable",
+               values_to = "value") %>% 
+  ggplot(aes(x = rel_time, y = value*100, col = as.factor(predclass))) +
+  geom_line(linewidth = 1.2) +
+  facet_grid(~variable, scales = "free_y") +
+  labs(y = "[%] Individuals using Service", col = "Latent Class")
+
+```
+
+Looking at the variables from a group perspective results in the following plot:
+
+```{r}
+#| label: fig-prop-pp-viz
+#| warnig: false
+#| message: false
+dat_qwt_num %>%
+  select(pragmaid, predclass) %>%
+  left_join(dat_qwt) %>% 
+  group_by(predclass, rel_time) %>% 
+  summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "variable",
+               values_to = "value") %>% 
+  ggplot(aes(x = rel_time, y = value*100, col = variable)) +
+  geom_line(linewidth = 1.2) +
+  facet_grid(.~predclass, scales = "free_y",labeller = as_labeller(label_fn(dat_qwt_num))) +
+  labs(y = "[%] Individuals using Service")
+```
+
+```{r}
+
+
+
+#TODO: Explore mosaic plots{
+#TODO: Zeitliche auflösung der zeitlichen Kreuztabellen durch Variablen ersetzen - 
+# TODO: Reha-qwt zusammenhang "Nicht fälle"! mit berücksichtigen als Spalte/Zeile
+#TODO: Quarter Annahme raus nehmen und behandlungen durch tatsächliche interventions IDs ersetzen
+#TODO: BLRT und Entropy berechnen!
+# TODO add 2-4 and 5+ group into multiple interv chart
+
+
+dat_pred = dat_qwt_num %>%
+  select(pragmaid, predclass) %>%
+  right_join(dat %>%
+              filter(period == obs_period,
+                     !is.na(interv_id_inner),
+                     interv.any ==T)
+             )
+
+
+
+
+
+get_categorical_interv_num = function(num_intervs){
+  if(num_intervs == 1) return("1")
+  if(num_intervs > 1 & num_intervs <= 4) return("2-4")
+  if(num_intervs > 4) return("5+")
+}
+get_categorical_interv = Vectorize(get_categorical_interv_num)
+
+dat_pred %>% 
+  group_by(predclass) %>% 
+  mutate(n_class = n_distinct(pragmaid)) %>% 
+  ungroup() %>% 
+  group_by(pragmaid, predclass, interv.type) %>%
+  mutate(num_intervs = n(), more_than_one_interv = get_categorical_interv(num_intervs)) %>% 
+  group_by(predclass, interv.type) %>% 
+  mutate(n_had_interv = n_distinct(pragmaid)) %>% 
+  group_by(predclass, interv.type, more_than_one_interv) %>% 
+  summarize(n = n_distinct(pragmaid), frac = n/mean(n_had_interv)) %>% 
+  ggplot(aes(x = interv.type, y = frac * 100)) +
+  geom_col(aes(fill = more_than_one_interv)) +
+  facet_wrap(~paste("Latent Class", predclass)) +
+ # theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Intervention", y = "Anteil Personen innerhalb Intervention", fill = "Anzahl Interventionen") + 
+  coord_flip()
+
+
+
+```
+
+```{r}
+
+  
+dat_pred2 = dat_pred %>% select(pragmaid, predclass) %>% distinct() %>%  right_join(dat_qwt %>%
+  group_by(pragmaid) %>%
+  summarize_at(analysis_vars, ~any(.x))) 
+
+
+# helper function  
+get_overlap = function(dat,
+                       cls,
+                       var1,
+                       var2,
+                       perspective = c("class", "intervention")){
+
+  
+  perspective = match.arg(perspective)
+  if(perspective == "class"){
+  overlaps = dat %>%
+    ungroup() %>% 
+    filter(predclass == cls) %>% 
+    select(pragmaid, all_of(c(var1,var2))) %>% 
+    group_by(pragmaid) %>% 
+    summarize(overlap = all(pick(var1),  pick(var2)))
+  }
+  else{
+    dat = dat[c(dat[var1] == TRUE), ]
+    overlaps = dat %>%
+    ungroup() %>% 
+    filter(predclass == cls) %>% 
+    select(pragmaid, all_of(c(var1,var2))) %>% 
+    group_by(pragmaid) %>% 
+    summarize(overlap = all(pick(var1),  pick(var2)))
+  }
+  
+  overlap = sum(overlaps$overlap)/nrow(overlaps)
+
+  # res = data.frame(var = var1, val = overlap) 
+  # names(res)[2] = var2
+  return(overlap)
+}
+# helper function end
+
+
+get_inter_variable_overlaps = function(dat,
+                                       cls,
+                                       analysis_vars,
+                                       perspective =  c("class", "intervention")){
+  
+perspective = match.arg(perspective)
+
+
+resresres = data.frame()
+for(v1 in analysis_vars){
+  resres = data.frame(var = v1)
+  
+  for(v2 in analysis_vars){
+    res = data.frame(val = get_overlap(dat,
+                                       cls,
+                                       v1,
+                                       v2,
+                                       perspective = perspective))
+    names(res) = v2
+    resres = cbind(resres, res)
+  }
+  
+  resresres = rbind(resresres, resres)
+}
+resresres$predclass = cls
+return(resresres)
+}
+
+
+
+
+
+overlaps_class_persp = map_dfr(1:classnum,
+                               ~ get_inter_variable_overlaps(
+                                            dat_pred2,
+                                            cls =.x, 
+                                            analysis_vars,
+                                            perspective = "class"))
+
+
+overlaps_interv_persp = map_dfr(1:classnum, 
+                                ~ get_inter_variable_overlaps(
+                                            dat_pred2,
+                                            cls =.x, 
+                                            analysis_vars,
+                                            perspective = "intervention"))
+
+# TODO: Make the same for all without class
+
+overlaps_class_persp %>%
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "var2", 
+               values_to = "val") %>% 
+  mutate(var = as.factor(var), var2 = as.factor(var2)) %>% 
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val)) +
+  geom_tile() +
+  facet_wrap(~paste0("Latent Class ", predclass), scales = "free") +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%")), size = 2) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0)) +
+  scale_x_discrete(limits = rev(levels(var))) +
+  labs(x = "Anteil Inanspruchnahmen weiterer Intervention",
+       y = "Intervention", 
+       fill = "Anteil Klasse[%]")
+
+# TODO: Add a column where the absolute percantage of class who did intervention y is displayed
+overlaps_interv_persp %>%
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "var2", 
+               values_to = "val") %>% 
+    mutate(var = as.factor(var), var2 = as.factor(var2), 
+           val = ifelse(is.nan(val), 0, val)) %>% 
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val)) +
+  geom_tile() +
+  facet_wrap(~paste0("Latent Class ", predclass), scales = "free") +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%")), size = 1.5) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0)) +
+  scale_x_discrete(limits = rev(levels(var))) +
+  labs(x = "Intervention",
+       y = "Anteil Inanspruchnahme weiterer Intervention",
+       fill = "Anteil X[%]")
+
+```
+
+```{r, include = F}
+
+
+dat_pred = dat_qwt_num %>% select(pragmaid, predclass) %>% right_join(dat_qwt)
+
+lookup =  dat_pred %>% group_by(predclass) %>% summarize(n_ids=n_distinct(pragmaid))
+  
+dat_pred %>% 
+  group_by(pragmaid, predclass) %>% 
+  summarize_at(analysis_vars, ~sum(.x)) %>%
+  pivot_longer(cols = all_of(analysis_vars), names_to = "var", values_to = "n_treats") %>% 
+  group_by(var, n_treats, predclass) %>% 
+  summarize(n = n()) %>% left_join(lookup, by = c("predclass" ="predclass")) %>% 
+  ungroup() %>% 
+  mutate(frac = n/n_ids) %>% 
+  select(var,n_treats, predclass, frac) %>% 
+  ggplot(aes(x = n_treats, y = var, fill = frac)) +
+  geom_tile() + facet_wrap(~predclass, scales = "free") +
+  geom_text(aes(label = paste0(round(frac * 100, 0), "%")), size = 2) +
+  scale_fill_viridis_c() +
+  labs(x = "Anzahl der Inanspruchnahmen innerhalb von 2 Jahren", y = "Intervention") + 
+  scale_x_discrete()
+
+
+
+
+
+
+
+```
+
+```{r, include=FALSE}
+  
+# 
+# 
+# get_variable_time_overlaps = function(dat, var1, var2, clss){
+#   var_a = ensym(var1)
+#   var_b = ensym(var2)
+#   
+# 
+# tst = dat_pred %>%
+#   filter(predclass == clss) %>%
+#   select(pragmaid, rel_time, all_of(c(var1,var2))) %>% filter(!!var_a == T|!!var_b==T) %>% 
+#   arrange(rel_time) %>% 
+#   pivot_wider(names_from = rel_time, values_from = all_of(c(var1, var2)), values_fill = F )
+# 
+# tmp = data.frame(time_var = names(tst) %>% str_subset(var2))
+# for(nam in names(tst) %>% str_subset(var1)){
+#   tmp2 = data.frame()
+#   for(nam2 in names(tst) %>% str_subset(var2)){
+#     tmp3 = data.frame(val = length(intersect(
+#                       tst$pragmaid[tst[[nam]]],
+#                       tst$pragmaid[tst[[nam2]]]
+#                           ))
+#                       )
+#     tmp2 = rbind(tmp2, tmp3)
+#     
+#   }
+#   tmp = cbind(tmp, tmp2)
+# }
+# names(tmp) = c("var_time", names(tst) %>% str_subset(var1))
+# return(tmp)
+# }
+# 
+# 
+# 
+# ttst = venngardium_leviosa(dat_pred, varname = "psych_short", class = 1, limit = 2, showplot = T)
+# 
+# venngardium_leviosa(dat_pred, varname = "inpat", class = 2, limit = 4, showplot = T)
+# 
+# 
+# 
+# 
+# 
+# 
+# get_variable_time_overlaps(dat_pred,"qwt" ,"reha",2)
+# get_variable_time_overlaps(dat_pred,"qwt" ,"psych_short",2)
+# 
+# 
+# View(get_variable_time_overlaps(dat_pred,"inpat" ,"qwt",3))
+# View(get_variable_time_overlaps(dat_pred,"inpat" ,"reha",3))
+# View(get_variable_time_overlaps(dat_pred,"qwt" ,"reha",3))
+# 
+# 
+# get_variable_time_overlaps(dat_pred,"inpat" ,"qwt",4)
+# 
+# 
+
+
+
+```
+
+We can display the same information with a Heatmap
+
+```{r}
+#| title: Heatmap of LCA Results
+#| warning: false
+
+# create a heatmap of the binary data used in the LCA
+dat_qwt_num %>%
+  select(pragmaid, predclass) %>%
+  left_join(dat_qwt) %>% 
+  group_by(predclass, rel_time) %>% 
+  summarize_at(all_of(analysis_vars), ~ round(sum(.x)/length(.x), 3)*100, ) %>% 
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "variable",
+               values_to = "value") %>% 
+  ggplot(aes(x = rel_time, y = predclass, fill = value)) + 
+  geom_tile(show.legend = F) +
+  geom_text(aes(label = paste0(round(value, 0),"%")), size = 2.5) +
+  theme_minimal() +
+  scale_fill_viridis_c() +
+  facet_wrap(~variable)
+
+
+```
+
+## Hierarchical Clustering via Jaccard (dis)similarity
+
+In order to cluster the Data in a hierarchical structure, we construct jaccard dissimilarity (distance) matrices, which we can feed into the hclust function.
+
+```{r}
+#| title: Prepare Distance Data
+
+# we can use the vegan package to get jaccard dissimilarity metric. 
+# or the builtin dist() function. 
+
+
+
+
+dat_qwt_sum = dat_qwt %>%
+  group_by(pragmaid) %>% 
+  summarize(across(analysis_vars, ~any(.x)))
+  
+dist1 = dist(dat_qwt_sum %>% dplyr::select(all_of(analysis_vars)), method = "binary")
+#identical 
+dist2 = vegdist(dat_qwt_sum %>% dplyr::select(all_of(analysis_vars)), method = "jaccard", binary = TRUE)
+
+```
+
+Now we can apply some different hierarchical clustering methods and visualize the results via dendrograms.
+
+```{r}
+#| title: Hierarchical Clustering and Dendrogram visualization
+#| message: false
+
+c1 = hclust(dist1, method = "ward.D2")
+plot(c1)
+
+#c2 = hclust(dist2, method = "average") # doesnt work when there are rows with FALSE only
+#plot(c2)
+
+c3 = hclust(dist1, method = "complete")
+plot(c3)
+
+
+
+```
+
+I Liked the clusters in Method ward.D2 (c1) the best and will continue the analysis with these clusters. In order to maintain comparability with our lca results, I will remain at a `r paste(length(unique(dat_qwt_num$predclass)))` class solution.
+
+```{r}
+#| title: Metric Visualizations
+#| message: false
+#| warning: false
+
+dend_c1 = as.dendrogram(c1)
+col_dend_c1 = color_branches(dend_c1, k = length(unique(dat_qwt_num$predclass)))
+plot(col_dend_c1)
+cuts = cutree(c1, k= length(unique(dat_qwt_num$predclass)))
+
+```
+
+Now we can look at the proportion of individuals using a service over time, for the different clusters identified by the hierarchical clustering. This corresponds somewhat to binary "typical" group trajectories.
+
+```{r}
+#| title: Proportion (%) Table
+#| warnig: false
+#| message: false
+
+frac = data.frame(clust = cuts %>% as.factor()) %>%
+  group_by(clust) %>% 
+  summarize(n=n()) %>%
+  mutate(frac = str_c(round(n/sum(n),3)*100, "%"))
+
+frac %>%
+  knitr::kable()
+```
+
+```{r}
+#| title: Proportion (%) Visualizations
+#| warnig: false
+#| message: false
+#| include: false
+dat_qwt_wide = dat_qwt_wide %>%
+  mutate(cluster = cuts)
+
+dat_qwt_wide %>%
+  select(pragmaid, cluster) %>% 
+  left_join(dat_qwt) %>% 
+  group_by(cluster, rel_time) %>% 
+  summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "variable",
+               values_to = "value") %>% 
+  ggplot(aes(x = rel_time, y = value*100, col = as.factor(cluster))) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~variable, scales = "free_y") +
+  labs(y = "[%] Individuals using Service", col = "Cluster")
+
+```
+
+Swapping the variables with the clusters results in:
+
+```{r}
+#| title: Proportion (%) Visualizations group pp
+#| warnig: false
+#| message: false
+
+label_fn2 = function(dat){
+
+frac = data.frame(pragmaid = dat$pragmaid, cluster = dat$cluster %>% as.factor()) %>%
+  group_by(cluster) %>% 
+  summarize(n=n_distinct(pragmaid)) %>%
+  mutate(frac = str_c(round(n/sum(n),3)*100, "%"), 
+         predclass = as.integer(cluster))
+  #print(frac)
+  res = c()
+  for(i in 1:nrow(frac)){
+  res[i] = paste0("C" ,
+                  frac[i, ]$cluster,
+                  ", n = ",
+                  frac[i, ]$n,
+                  " (",
+                  frac[i, ]$frac,
+                  ")"
+  )
+  
+  }
+  names(res) = frac %>% select(predclass) %>% pull()
+  return(res) 
+}
+
+dat_qwt_wide %>%
+  select(pragmaid, cluster) %>% 
+  left_join(dat_qwt) %>% 
+  group_by(cluster, rel_time) %>% 
+  summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "variable",
+               values_to = "value") %>% 
+  ggplot(aes(x = rel_time, y = value*100, col = variable)) +
+  geom_line(linewidth = 1.2) +
+  facet_grid(.~cluster, scales = "free_y", labeller = as_labeller(label_fn2(dat_qwt_wide))) +
+  labs(y = "[%] Individuals using Service")
+```
+
+```{r}
+
+
+#TODO: Explore mosaic plots{
+#TODO: Zeitliche auflösung der zeitlichen Kreuztabellen durch Variablen ersetzen - 
+# TODO: Reha-qwt zusammenhang "Nicht fälle"! mit berücksichtigen als Spalte/Zeile
+#TODO: Quarter Annahme raus nehmen und behandlungen durch tatsächliche interventions IDs ersetzen
+#TODO: BLRT und Entropy berechnen!
+
+dat_qwt_sum = dat_qwt_sum %>% 
+  left_join(dat_qwt_wide %>% 
+              select(pragmaid, cluster)) %>% 
+  rename(c(predclass = "cluster"))
+
+
+dat_pred = dat_qwt_sum %>%
+  select(pragmaid, predclass) %>%
+  right_join(dat %>%
+              filter(period == obs_period,
+                     !is.na(interv_id_inner),
+                     interv.any ==T)
+             )
+
+
+
+
+
+dat_pred %>% 
+  group_by(predclass) %>% 
+  mutate(n_class = n_distinct(pragmaid)) %>% 
+  ungroup() %>% 
+  group_by(pragmaid, predclass, interv.type) %>%
+  mutate(num_intervs = n(), more_than_one_interv = num_intervs > 1) %>% 
+  group_by(predclass, interv.type) %>% 
+  mutate(n_had_interv = n_distinct(pragmaid)) %>% 
+  group_by(predclass, interv.type, more_than_one_interv) %>% 
+  summarize(n = n_distinct(pragmaid), frac = n/mean(n_had_interv)) %>% 
+  ggplot(aes(x = interv.type, y = frac * 100)) +
+  geom_col(aes(fill = more_than_one_interv)) +
+  facet_wrap(~paste("Cluster", predclass)) +
+ # theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Intervention", y = "Anteil Personen innerhalb Intervention", fill = "Multiple Interventionen des selben Typs") + 
+  coord_flip()
+
+
+
+```
+
+```{r}
+ 
+dat_pred2 = dat_pred %>%
+  select(pragmaid, predclass) %>%
+  distinct() %>% 
+  right_join(dat_qwt %>%
+  group_by(pragmaid) %>%
+  summarize_at(analysis_vars, ~any(.x))) 
+
+
+# helper function  
+get_overlap = function(dat,
+                       cls,
+                       var1,
+                       var2,
+                       perspective = c("class", "intervention")){
+
+  
+  perspective = match.arg(perspective)
+  if(perspective == "class"){
+  overlaps = dat %>%
+    ungroup() %>% 
+    filter(predclass == cls) %>% 
+    select(pragmaid, all_of(c(var1,var2))) %>% 
+    group_by(pragmaid) %>% 
+    summarize(overlap = all(pick(var1),  pick(var2)))
+  }
+  else{
+    dat = dat[c(dat[var1] == TRUE), ]
+    overlaps = dat %>%
+    ungroup() %>% 
+    filter(predclass == cls) %>% 
+    select(pragmaid, all_of(c(var1,var2))) %>% 
+    group_by(pragmaid) %>% 
+    summarize(overlap = all(pick(var1),  pick(var2)))
+  }
+  
+  overlap = sum(overlaps$overlap)/nrow(overlaps)
+
+  # res = data.frame(var = var1, val = overlap) 
+  # names(res)[2] = var2
+  return(overlap)
+}
+# helper function end
+
+
+get_inter_variable_overlaps = function(dat,
+                                       cls,
+                                       analysis_vars,
+                                       perspective =  c("class", "intervention")){
+  
+perspective = match.arg(perspective)
+
+
+resresres = data.frame()
+for(v1 in analysis_vars){
+  resres = data.frame(var = v1)
+  
+  for(v2 in analysis_vars){
+    res = data.frame(val = get_overlap(dat,
+                                       cls,
+                                       v1,
+                                       v2,
+                                       perspective = perspective))
+    names(res) = v2
+    resres = cbind(resres, res)
+  }
+  
+  resresres = rbind(resresres, resres)
+}
+resresres$predclass = cls
+return(resresres)
+}
+
+
+
+
+
+overlaps_class_persp = map_dfr(1:classnum,
+                               ~ get_inter_variable_overlaps(
+                                            dat_pred2,
+                                            cls =.x, 
+                                            analysis_vars,
+                                            perspective = "class"))
+
+
+overlaps_interv_persp = map_dfr(1:classnum, 
+                                ~ get_inter_variable_overlaps(
+                                            dat_pred2,
+                                            cls =.x, 
+                                            analysis_vars,
+                                            perspective = "intervention"))
+
+overlaps_class_persp %>%
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "var2", 
+               values_to = "val") %>% 
+  mutate(var = as.factor(var), var2 = as.factor(var2)) %>% 
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val)) +
+  geom_tile() +
+  facet_wrap(~paste0("Cluster ", predclass), scales = "free") +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%")), size = 2) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0)) +
+  scale_x_discrete(limits = rev(levels(var))) +
+  labs(x = "Anteil Inanspruchnahmen weiterer Intervention",
+       y = "Intervention", 
+       fill = "Anteil an Klasse [%]")
+
+
+overlaps_interv_persp %>%
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "var2", 
+               values_to = "val") %>% 
+    mutate(var = as.factor(var), var2 = as.factor(var2), 
+           val = ifelse(is.nan(val), 0, val)) %>% 
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val)) +
+  geom_tile() +
+  facet_wrap(~paste0("Cluster ", predclass), scales = "free") +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%")), size = 1.5) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0)) +
+  scale_x_discrete(limits = rev(levels(var))) +
+  labs(x = "Intervention",
+       y = "Anteil Inanspruchnahme weiterer Intervention",
+       fill = "Anteil an X [%]")
+
+```
+
+In more class solutions, it seems to identify slightly different subgroups than the Latent Class solution (see @fig-prop-pp-viz )
+
+Finally a Heatmap, basicly containing the same information as the plot above
+
+```{r, out.width="120%"}
+#| title: Heatmap of Hierarchical Clustering Results
+#| warning: false
+#| message: false
+
+# create a heatmap of the binary data used in the LCA
+dat_qwt_wide %>%
+  mutate(cluster = cuts) %>%
+  select(pragmaid, cluster) %>% 
+  left_join(dat_qwt) %>% 
+  group_by(cluster, rel_time) %>% 
+  summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 
+  pivot_longer(cols = all_of(analysis_vars),
+               names_to = "variable",
+               values_to = "value") %>% 
+  ggplot(aes(x = rel_time, y = cluster, fill = value)) + 
+  geom_tile(show.legend = F) +
+  geom_text(aes(label = paste0(round(value, 2)*100,"%")), size = 2.5) +
+  theme_minimal() +
+  scale_fill_viridis_c() +
+  facet_wrap(~variable)
+
+```
+
+## 
+
+## Conclusion
+
+Overall, LCA and Hierarchical Clustering seem to identify similar groups. However, the LCA approach is more sophisticated and can be used to model the data generating process. The hierarchical clustering approach is more exploratory and can be used to identify groups in a more data driven way.
+
+TODO:: Venn Diagramme updaten; Kreuztabelle zeitliche Personen Overlaps
+
+Class probs all time resolutions
