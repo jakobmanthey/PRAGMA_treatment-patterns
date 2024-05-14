@@ -2,5 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
-input 
+input
 output
+PRAGMA_treatment-patterns.Rproj
