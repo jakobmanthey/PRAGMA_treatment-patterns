@@ -58,7 +58,7 @@ classnum = 6# Which model should be used for subsequent analysis? (number equals
 
 ```{r}
 getwd()
-dat = read_rds(here("input","sequence_data_240513","4_data_AUD diagnosis and intervention sequences_2024-05-13.rds")) 
+dat = read_rds(here("input","sequence_data_240515","4_data_AUD diagnosis and intervention sequences_2024-05-15.rds")) 
 # create an interv_id running within treatment type instead of across treatment types
 dat = dat %>% left_join(dat %>%  
   select(pragmaid, period, interv.type, interv_id) %>%
@@ -211,7 +211,10 @@ dat_qwt_num %>%
   ggplot(aes(x = rel_time, y = value*100, col = variable)) +
   geom_line(linewidth = 1.2) +
   facet_grid(.~predclass, scales = "free_y",labeller = as_labeller(label_fn(dat_qwt_num))) +
-  labs(y = "[%] Individuals using Service")
+  labs(x = "number of quarters after AUD diagnosis",
+       y = "[%] Individuals using Service")
+
+ggsave(paste0("output/","figures/","fig_classes_lineplot_class6.png"), width = 10, height = 6)
 ```
 
 ```{r}
@@ -262,6 +265,7 @@ dat_pred %>%
   labs(x = "Intervention", y = "Anteil Personen innerhalb Intervention", fill = "Anzahl Interventionen") + 
   coord_flip()
 
+ggsave(paste0("output/","figures/","fig_classes_barplot.png"), width = 10, height = 6)
 
 
 ```
