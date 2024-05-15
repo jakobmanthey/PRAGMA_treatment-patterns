@@ -48,7 +48,7 @@ options(scipen = 999)
 ##  1) PRAGMA-ID
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"0_pragma_id_GKV with Stammdata_2024-05-13.rds")
+filename <- paste0(inpath,"0_pragma_id_GKV with Stammdata_2024-05-15.rds")
 id.dat <- readRDS(filename)
 rm(filename)
 
@@ -63,7 +63,7 @@ rm(filename)
 ##  3) DIAGNOSES
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"1_data_all diagnoses_2024-05-13.rds")
+filename <- paste0(inpath,"1_data_all diagnoses_2024-05-15.rds")
 diag.dat <- readRDS(filename)
 aud.dat <- diag.dat[icd.alc == T]
 rm(filename)
@@ -92,7 +92,7 @@ rm(filename)
 ##  7) Temporary data
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"1_data_insurance periods_2024-05-13.rds")
+filename <- paste0(inpath,"1_data_insurance periods_2024-05-15.rds")
 temp.dat <- readRDS(filename)
 rm(filename)
 
