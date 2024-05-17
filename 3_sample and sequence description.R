@@ -466,12 +466,12 @@ tab1$emp.type <- factor(tab1$emp.type)
 tab1out <- tab1[, .(.N, 
                     female_prop = sum(sex == "weiblich")/.N,
                     age_mean = mean(age),
-                    age_low = quantile(age, 0.25),
-                    age_high = quantile(age, 0.75),
+                    age_iqr_low = quantile(age, 0.25),
+                    age_iqr_high = quantile(age, 0.75),
                     empl_prop = sum(emp.type == "in Arbeit")/.N,
                     elix_mean = mean(elix_sum_nomental),
-                    elix_low = quantile(elix_sum_nomental, 0.25),
-                    elix_high = quantile(elix_sum_nomental, 0.75)), by = group]
+                    elix_iqr_low = quantile(elix_sum_nomental, 0.25),
+                    elix_iqr_high = quantile(elix_sum_nomental, 0.75)), by = group]
 
 
 
