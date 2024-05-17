@@ -51,14 +51,14 @@ obs_period = "24m" # observational period
 resol = "quarter" # time resolution for plotting purposes starting from aud date. 
 # possible vals: "day", "week", "month", "quarter", "halfyear", "year"
 save = T # save transformed dataframe as cache in order to reexecute script faster
-load_if_possible = T # if saved transformed df is found, load instead of compute
+load_if_possible = F # if saved transformed df is found, load instead of compute
 render = T # overrides console prompting for laod if possible in order to render document
 classnum = 6# Which model should be used for subsequent analysis? (number equals classes of the desired model)
 ```
 
 ```{r}
 getwd()
-dat = read_rds(here("input","sequence_data_240515","4_data_AUD diagnosis and intervention sequences_2024-05-15.rds")) 
+dat = read_rds(here("input","sequence_data_240516","4_data_AUD diagnosis and intervention sequences_2024-05-16.rds")) 
 # create an interv_id running within treatment type instead of across treatment types
 dat = dat %>% left_join(dat %>%  
   select(pragmaid, period, interv.type, interv_id) %>%
@@ -79,7 +79,7 @@ dat_qwt = get_treatment_series_at_resolution(dat,
                                              resol = resol, # timestep resolution
                                              event = "aud", # event to start treatment series. currently does nothing (always set to aud)
                                              save = T, # save result when computed?
-                                             load_if_possible = T, # load if same config exists in cache folder, prompts user in order to check if right file is laoded
+                                             load_if_possible = F, # load if same config exists in cache folder, prompts user in order to check if right file is laoded
                                              render = T, # forces load without prompting (ovverrides prompt and just chooses the most likely one)
                                              only_intervs = T) %>% 
   filter(interv.any.allquarters == T) # only use cases where an intervention happened because LCA has problems fitting all the zero cases
@@ -200,6 +200,9 @@ Looking at the variables from a group perspective results in the following plot:
 #| label: fig-prop-pp-viz
 #| warnig: false
 #| message: false
+
+#dat_qwt_num$predclass <- factor(dat_qwt_num$predclass, levels = c(4,2,1,3,5,6))
+
 dat_qwt_num %>%
   select(pragmaid, predclass) %>%
   left_join(dat_qwt) %>% 
@@ -210,11 +213,14 @@ dat_qwt_num %>%
                values_to = "value") %>% 
   ggplot(aes(x = rel_time, y = value*100, col = variable)) +
   geom_line(linewidth = 1.2) +
+  ggthemes::scale_color_gdocs() +
   facet_grid(.~predclass, scales = "free_y",labeller = as_labeller(label_fn(dat_qwt_num))) +
   labs(x = "number of quarters after AUD diagnosis",
        y = "[%] Individuals using Service")
 
-ggsave(paste0("output/","figures/","fig_classes_lineplot_class6.png"), width = 10, height = 6)
+ggsave(paste0("output/","figures/","fig_classes_lineplot_class6_",Sys.Date(),".png"), width = 10, height = 6)
+
+
 ```
 
 ```{r}
