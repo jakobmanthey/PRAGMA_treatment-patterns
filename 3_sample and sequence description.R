@@ -48,14 +48,14 @@ options(scipen = 999)
 ##  1) PRAGMA-ID
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"0_pragma_id_GKV with Stammdata_2024-05-15.rds")
-id.dat <- readRDS(filename)
+filename <- paste0(inpath,"0_pragma_id_GKV with Stammdata_2024-05-16.rds")
+id.dat <- readRDS(filename)[order(pragmaid)]
 rm(filename)
 
 ##  2) INTERVENTIONS
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"4_data_AUD diagnosis and intervention sequences_2024-05-15.rds")
+filename <- paste0(inpath,"4_data_AUD diagnosis and intervention sequences_2024-05-16.rds")
 interv.dat <- readRDS(filename)
 interv.dat <- interv.dat[period == "24m"]
 rm(filename)
@@ -63,7 +63,7 @@ rm(filename)
 ##  3) DIAGNOSES
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"1_data_all diagnoses_2024-05-15.rds")
+filename <- paste0(inpath,"1_data_all diagnoses_2024-05-16.rds")
 diag.dat <- readRDS(filename)
 aud.dat <- diag.dat[icd.alc == T]
 rm(filename)
@@ -71,14 +71,14 @@ rm(filename)
 ##  4) EMPLOYMENT
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"1_data_employment periods_2024-05-15.rds")
+filename <- paste0(inpath,"1_data_employment periods_2024-05-16.rds")
 emp.dat <- readRDS(filename)
 rm(filename)
 
 ##  5) INCOME
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"1_data_income data_2024-05-15.rds")
+filename <- paste0(inpath,"1_data_income data_2024-05-16.rds")
 inc.dat <- readRDS(filename)
 rm(filename)
 
@@ -92,7 +92,7 @@ rm(filename)
 ##  7) Temporary data
 # -------------------------------------------------------
 
-filename <- paste0(inpath,"1_data_insurance periods_2024-05-15.rds")
+filename <- paste0(inpath,"1_data_insurance periods_2024-05-16.rds")
 temp.dat <- readRDS(filename)
 rm(filename)
 
@@ -240,9 +240,9 @@ length(unique(data$pragmaid)) # 9496
 
 data[, age := year(date.aud) - yob]
 data[, summary(age)]
-data[is.na(age)] ## need to add STAMMDATA !!!
+data[is.na(age)] ## none
 
-# remove people aged >18 at time of AUD diagnoses
+# remove people aged >18 at time of AUD diagnoses --> remove before LCA
 data <- data[age>=18]
 
 # define agegroups
@@ -257,8 +257,8 @@ data[, table(age, agegroup)]
 data$agegroup <- factor(data$agegroup)
 
 # dimensions
-nrow(data) # 9481
-length(unique(data$pragmaid)) # 9481
+nrow(data) # 9488
+length(unique(data$pragmaid)) # 9488
 
 ##  5) ADD INCOME FOR EMPLOYED
 #   .............................................
@@ -299,11 +299,11 @@ data[gkv == "aok", table(emp.type, is.na(income))] # missing for 55 employed peo
 data[gkv == "dak", table(emp.type, is.na(income))] # missing for 854 employed people
 
 # dimensions
-nrow(data) # 9481
-length(unique(data$pragmaid)) # 9481
+nrow(data) # 9488
+length(unique(data$pragmaid)) # 9488
 
 
-##  4) ADD GROUPINGS
+##  6) ADD GROUPINGS
 #   .............................................
 
 # A) SEQUENCE CLASSES
@@ -317,56 +317,329 @@ data[, table(predclass)]
 
 # class labels:
 data[, class := dplyr::recode(predclass,
-                              "0" = "0: no intervention (n=6636)",
-                              "1" = "1: qwt and other (n=616)",
-                              "2" = "2: inpatient contacts (n=342)",
-                              "3" = "3: psychiatric/psychological care (n=1252)",
-                              "4" = "4: counselling (n=158)",
-                              "5" = "5: rehabilitation (n=368)",
-                              "6" = "6: mixed (n=109)")]
+                              "0" = "0: no intervention (n=6651)",
+                              "4" = "4: psychiatric/psychological care (n=1256)",
+                              "2" = "2: counselling (n=158)",
+                              "1" = "1: inpatient contacts (n=535)",
+                              "3" = "3: qwt and other (n=433)",
+                              "5" = "5: rehabilitation (n=360)",
+                              "6" = "6: mixed (n=99)")]
+data[, class_de := dplyr::recode(predclass,
+                              "0" = "0: Keine Intervention",
+                              "4" = "1: Vorwiegend psych. Kurzkontakte",
+                              "2" = "5: Nur Suchtberatung",
+                              "1" = "2: Vorwiegend stationäre Behandlung",
+                              "3" = "3: Vorwiegend qualifizierter Entzug",
+                              "5" = "4: Rehabilitation+",
+                              "6" = "6: Alles")]
+
 data$class <- as.factor(data$class)
-data[, table(class)]
+data$class_de <- factor(data$class_de, levels = unique(data$class_de)[order(unique(data$class_de))])
+data[, table(class, useNA = "always")]
+data[, table(class_de, useNA = "always")]
+data[, table(class_de,class)]
 data$predclass <- NULL
 
-data[, table(class,interv.any)]
-data[, .(elix_all = round(mean(elix_sum_all),1),
-         elix_nomental = round(mean(elix_sum_nomental),1)), by = class][order(class)]
-data[, , by = class][order(class)]
+data[, table(class,interv.any)] # should fit 100%
+
+# dimensions
+nrow(data) # 9488
+length(unique(data$pragmaid)) # 9488
+
+
+##  7) ADD INTERVENTIONS
+#   .............................................
+
+add <- unique(interv.dat[,.(pragmaid,interv.type,interv_id)])
+add <- unique(add[, .(check = any(!is.na(interv_id))), by = .(pragmaid,interv.type)])
+add <- dcast(add, pragmaid ~ interv.type, value.var = "check")
+
+data <- merge(data,
+              add, 
+              by = "pragmaid", all.x = T)
+rm(add)
+
+# get number of intervention types:
+vars <- names(data)[names(data) %like% "bado|inpat|medi|psych_full|psych_short|qwt|reha"]
+data[, interv_n := rowSums(.SD),by = pragmaid, .SDcols = vars]
+rm(vars)
+
+# compare with interv.any:
+data[, table(interv_n,interv.any)] # consistent
+data[interv.any == T] # 2837
 
 # dimensions
 nrow(data) # 9481
 length(unique(data$pragmaid)) # 9481
 
 
-##  5) ADD INTERVENTIONS
-#   .............................................
 
-#add <- interv.dat
 
-#data <- 
 
 
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
 
-# 5) FIGURE
+# 3) ANALYSES
 # ______________________________________________________________________________________________________________________
 
-##  1) heatmap elixhauser
+# proportion with any intervention:
+data[interv.any == T] # 2837
+data[, mean(interv.any)] # 29.9%
+data[, mean(interv.any), by = sex] # more female
+data[, mean(interv.any), by = agegroup] # more younger 
+data[, mean(interv.any), by = age <= 64] # more younger
+data[, mean(interv.any), by = emp.type] # more unemployed
+
+# number of interventions:
+interv.dat[!is.na(date.interv.start), sum(!is.na(date.interv.start)), by = .(pragmaid,interv.type)][,mean(V1), by = interv.type]
+
+# % intervention
+data[, mean(bado)] # 3.6%
+data[, mean(inpat)] # 7%
+data[, mean(medi)] # 1%
+data[, mean(psych_full)] # 0,7%
+data[, mean(psych_short)] # 17%
+data[, mean(qwt)] # 9%
+data[, mean(reha)] # 4%
+
+# Rehabilitation and QWT
+data[, table(qwt,reha)]
+data[, prop.table(table(qwt,reha),1)]
+
+
+# sex:
+summary(glm(sex == "female" ~  age, data, family = "binomial"))
+summary(glm(sex == "female" ~  age + class_de, data, family = "binomial"))
+
+
+
+# unemp:
+summary(glm(emp.type == "unemployed" ~  age, data, family = "binomial"))
+summary(glm(emp.type == "unemployed" ~  age + sex, data, family = "binomial"))
+summary(glm(emp.type == "unemployed" ~  age + sex + class_de, data, family = "binomial"))
+
+
+# comorbidity:
+data[, .(elix_all = round(mean(elix_sum_all),1),
+         elix_nomental = round(mean(elix_sum_nomental),1)), by = class][order(class)]
+
+summary(glm(elix_sum_nomental ~  age, data, family = "gaussian"))
+summary(glm(elix_sum_nomental ~  age, data, family = "poisson"))
+
+summary(glm(elix_sum_nomental ~  age + sex, data, family = "poisson"))
+summary(glm(elix_sum_nomental ~  age + sex + class_de, data, family = "poisson"))
+
+
+
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+
+# 4) TABLES
+# ______________________________________________________________________________________________________________________
+
+##  1) TABLE 1
 #   .............................................
 
-pdat <- merge(data[,.(pragmaid,class)],
-              elix.dat,by = "pragmaid", all.x = T)
-pdat <- melt(pdat, id.vars = c("pragmaid", "class"))
-pdat[, n_class := length(unique(pragmaid)), by = class]
+vars <- names(data)[names(data) %like% "sex|age$|emp.type|elix_sum_nomental"]
 
-pdat2 <- unique(pdat[, .(percentage = sum(value == 1)/n_class,n_class), by = .(class,variable) ])
+tab1 <- rbind(data[,c(list(group = "Alle"), .SD),.SDcols = vars],
+              data[interv.any == T,c(list(group = "Irgendeine Intervention"), .SD),.SDcols = vars],
+              data[bado == T,c(list(group = "Suchtberatung"), .SD),.SDcols = vars],
+              data[inpat == T,c(list(group = "Stationär"), .SD),.SDcols = vars],
+              data[qwt == T,c(list(group = "Qualifizierter Entzug"), .SD),.SDcols = vars],
+              data[reha == T,c(list(group = "Reha"), .SD),.SDcols = vars],
+              data[medi == T,c(list(group = "Pharma"), .SD),.SDcols = vars],
+              data[psych_full == T,c(list(group = "Psychotherapie"), .SD),.SDcols = vars],
+              data[psych_short == T,c(list(group = "Psych. Kurzkontakt"), .SD),.SDcols = vars])
+
+tab1$group <- factor(tab1$group, levels = unique(tab1$group))
+tab1[, sex := ifelse(sex == "female", "weiblich", "männlich")]
+tab1$sex <- factor(tab1$sex)
+tab1[, emp.type := ifelse(emp.type == "employed", "in Arbeit",
+                          ifelse(emp.type == "unemployed", "arbeitslos",
+                                 ifelse(emp.type == "retired", "in Rente", "sonstiges")))]
+tab1$emp.type <- factor(tab1$emp.type)
+
+tab1out <- tab1[, .(.N, 
+                    female_prop = sum(sex == "weiblich")/.N,
+                    age_mean = mean(age),
+                    age_low = quantile(age, 0.25),
+                    age_high = quantile(age, 0.75),
+                    empl_prop = sum(emp.type == "in Arbeit")/.N,
+                    elix_mean = mean(elix_sum_nomental),
+                    elix_low = quantile(elix_sum_nomental, 0.25),
+                    elix_high = quantile(elix_sum_nomental, 0.75)), by = group]
+
+
+
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+
+# 5) FIGURES INTERVENTIONS (GERMAN!)
+# ______________________________________________________________________________________________________________________
+
+##  1) Intervention
+#   .............................................
+
+pdat <- copy(tab1[!group %like% "Alle|Intervention"])
+colors <- ggthemes::ggthemes_data$gdocs$colors$value[3:9]
+
+ggplot(pdat, aes(x = group, fill = group)) +
+  #ggtitle("Anzahl Personen mit mind. 1 Intervention nach der ersten Alkohol-Diagnose") + 
+  geom_bar() + 
+  scale_fill_manual("", values = colors, guide = F) +
+  scale_x_discrete("") +
+  scale_y_continuous("")
+
+ggsave(paste0(outpath,"figures/DEU_groups_count_",Sys.Date(),".png"), width = 11, height = 6)
+
+
+##  2) sex and age
+#   .............................................
+
+pdat <- copy(tab1)
+
+pdat$group_rev <- factor(pdat$group, levels = rev(levels(pdat$group)))
+levels(pdat$group)
+levels(pdat$group_rev)
+
+pdat_prop <- unique(pdat[, .(n_female = sum(sex == "weiblich"),n_group = .N), by = .(group_rev)])
+pdat_prop[, prop_class_female := round(n_female/n_group,2)]
+
+colors <- rev(ggthemes::ggthemes_data$gdocs$colors$value[1:9])
+
+ggplot(pdat, aes(x = group_rev, y = age)) +
+  geom_boxplot(aes(fill = group_rev)) + 
+  geom_label(data = pdat_prop, aes(x = group_rev,y = 80, label = scales::percent(prop_class_female), group = group_rev), 
+             position = position_dodge(width = 0.75), fill = "#FFDF00") +
+  scale_fill_manual(values = colors, guide = F) +
+  scale_x_discrete("") +
+  scale_y_continuous("Alter in Jahren") +
+  theme(legend.position = "bottom") +
+  coord_flip()
+  
+ggsave(paste0(outpath,"figures/DEU_groups_sex and age",Sys.Date(),".png"), width = 10, height = 5)
+
+
+##  3) employment
+#   .............................................
+
+pdat <- copy(tab1)
+
+pdat$group_rev <- factor(pdat$group, levels = rev(levels(pdat$group)))
+levels(pdat$group)
+levels(pdat$group_rev)
+
+ggplot(pdat, aes(x = group_rev, fill = emp.type)) +
+  geom_bar(position = "fill") +
+  scale_fill_viridis_d("") +
+  coord_flip() +
+  theme(legend.position = "bottom") +
+  guides(fill = guide_legend(ncol = 4, nrow = 1, reverse = TRUE)) + 
+  scale_x_discrete("") + 
+  scale_y_continuous("", label = scales::percent) 
+
+ggsave(paste0(outpath,"figures/DEU_groups_employment_",Sys.Date(),".png"), width = 10, height = 5)
+
+rm(pdat)
+
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+
+# 5) FIGURES CLASSES (GERMAN!)
+# ______________________________________________________________________________________________________________________
+
+##  1) age and sex
+#   .............................................
+
+pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_de|sex|age"]])
+
+pdat$class_rev <- factor(pdat$class_de, levels = rev(levels(pdat$class_de)))
+
+pdat_prop <- unique(pdat[, .(n_female = sum(sex == "female"),n_group = .N), by = .(class_rev)])
+pdat_prop[, prop_class_female := round(n_female/n_group,2)]
+
+ggplot(pdat, aes(x = class_rev, y = age)) +
+  geom_boxplot(aes(fill = class_rev)) + 
+  geom_label(data = pdat_prop, aes(x = class_rev,y = 80, label = scales::percent(prop_class_female), group = class_rev), 
+             position = position_dodge(width = 0.75), fill = "#FFDF00") +
+  scale_fill_viridis_d(guide = F) +
+  scale_x_discrete("") +
+  scale_y_continuous("Alter in Jahren") +
+  theme(legend.position = "bottom") +
+  coord_flip()
+
+ggsave(paste0(outpath,"figures/DEU_classes_sex and age_",Sys.Date(),".png"), width = 10, height = 5)
+
+rm(pdat, pdat_prop)
+
+
+##  2) employment
+#   .............................................
+
+pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_de|emp.type|sex"]])
+pdat$class_rev <- factor(pdat$class_de, levels = rev(levels(pdat$class_de)))
+
+pdat[, emp.type := ifelse(emp.type == "employed", "in Arbeit",
+                          ifelse(emp.type == "unemployed", "arbeitslos",
+                                 ifelse(emp.type == "retired", "in Rente", "sonstiges")))]
+
+ggplot(pdat, aes(x = class_rev, fill = emp.type)) +
+  geom_bar(position = "fill") +
+  scale_fill_viridis_d("") +
+  coord_flip() +
+  theme(legend.position = "bottom") +
+  guides(fill = guide_legend(ncol = 4, nrow = 1, reverse = TRUE)) + 
+  scale_x_discrete("") + 
+  scale_y_continuous("", label = scales::percent)
+
+ggsave(paste0(outpath,"figures/DEU_classes_employment_",Sys.Date(),".png"), width = 10, height = 5)
+
+rm(pdat)
+
+
+##  3) comorbidity
+#   .............................................
+
+pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_de|elix|sex"]])
+pdat$class_rev <- factor(pdat$class_de, levels = rev(levels(pdat$class_de)))
+pdat[, mean := mean(elix_sum_nomental), by = class_rev]
+
+ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
+  #geom_boxplot() +
+  geom_violin() +
+  geom_point(aes(y = mean), size = 3, shape = 25, fill = "black") +
+  scale_fill_viridis_d("", guide = F) +
+  coord_flip() +
+  theme(legend.position = "bottom") +
+  scale_x_discrete("") + 
+  scale_y_continuous("Summenwert Elixhauser Komorbiditätsindex (1-27)")
+
+ggsave(paste0(outpath,"figures/DEU_classes_comorbidity_",Sys.Date(),".png"), width = 10, height = 5)
+
+rm(pdat)
+
+
+
+##  4) heatmap elixhauser
+#   .............................................
+
+pdat <- merge(data[,.(pragmaid,class_de)],
+              elix.dat,by = "pragmaid", all.x = T)
+pdat <- melt(pdat, id.vars = c("pragmaid", "class_de"))
+pdat[, n_class := length(unique(pragmaid)), by = class_de]
+
+pdat2 <- unique(pdat[, .(percentage = sum(value == 1)/n_class,n_class), by = .(class_de,variable) ])
 
 pdat2$label <- pdat2$variable
 levels(pdat2$label) <- attr(elix.dat, "variable.labels")[2:32]
 
-ggplot(pdat2, aes(x = class, y = label, fill = percentage)) +
+ggplot(pdat2, aes(x = class_de, y = label, fill = percentage)) +
   geom_tile(show.legend = F) + 
   geom_text(aes(label = scales::percent(percentage, accuracy = 1)), color = "black") +
   scale_fill_gradient(low = "#FFDAB9", high = "#FF0000") +
@@ -374,22 +647,30 @@ ggplot(pdat2, aes(x = class, y = label, fill = percentage)) +
   scale_y_discrete("") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
-ggsave(paste0(outpath,"figures/fig_classes_heatmap comorbidity.png"), width = 10, height = 10)
+ggsave(paste0(outpath,"figures/DEU_classes_heatmap comorbidity_",Sys.Date(),".png"), width = 10, height = 10)
 
 rm(pdat, pdat2)
+
+
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+
+# 5) FIGURES CLASSES
+# ______________________________________________________________________________________________________________________
 
 ##  2) age and sex
 #   .............................................
 
 pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class|sex|age"]])
-pdat_prop <- unique(pdat[, .(sex,n_male = sum(sex == "male"),n_class = .N), by = .(class)])
+pdat_prop <- unique(pdat[, .(n_male = sum(sex == "male"),n_class = .N), by = .(class)])
 pdat_prop[, prop_class_sex := ifelse(sex=="male", n_male/n_class,  (n_class-n_male)/n_class)]
 
-ggplot(pdat, aes(x = sex, y = age, fill = class)) +
+ggplot(pdat, aes(x = sex, y = age, fill = class_de)) +
   ggtitle("boxplots of age and % of class female/male sex") + 
   geom_boxplot() + 
   geom_label(data = pdat_prop, aes(x = sex, y = 80, label = scales::percent(prop_class_sex)), 
-            position = position_dodge(width = 0.75)) +
+             position = position_dodge(width = 0.75)) +
   scale_fill_viridis_d() +
   scale_x_discrete("") +
   theme(legend.position = "bottom") +
@@ -424,3 +705,27 @@ rm(pdat)
 
 
 
+##  1) heatmap elixhauser
+#   .............................................
+
+pdat <- merge(data[,.(pragmaid,class)],
+              elix.dat,by = "pragmaid", all.x = T)
+pdat <- melt(pdat, id.vars = c("pragmaid", "class"))
+pdat[, n_class := length(unique(pragmaid)), by = class]
+
+pdat2 <- unique(pdat[, .(percentage = sum(value == 1)/n_class,n_class), by = .(class,variable) ])
+
+pdat2$label <- pdat2$variable
+levels(pdat2$label) <- attr(elix.dat, "variable.labels")[2:32]
+
+ggplot(pdat2, aes(x = class, y = label, fill = percentage)) +
+  geom_tile(show.legend = F) + 
+  geom_text(aes(label = scales::percent(percentage, accuracy = 1)), color = "black") +
+  scale_fill_gradient(low = "#FFDAB9", high = "#FF0000") +
+  scale_x_discrete("") +
+  scale_y_discrete("") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+ggsave(paste0(outpath,"figures/fig_classes_heatmap comorbidity.png"), width = 10, height = 10)
+
+rm(pdat, pdat2)
