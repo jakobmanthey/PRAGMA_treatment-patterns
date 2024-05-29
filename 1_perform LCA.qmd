@@ -40,7 +40,7 @@ library(tidyverse)
 library(here)
 library(furrr)
 library(vroom)
-here::i_am("AnalyzePragmaDataQuartersAUD_NoRelTime.qmd")
+here::i_am("1_perform LCA.qmd")
 
 ```
 
@@ -58,7 +58,7 @@ classnum = 6# Which model should be used for subsequent analysis? (number equals
 
 ```{r}
 getwd()
-dat = read_rds(here("input","sequence_data_240516","4_data_AUD diagnosis and intervention sequences_2024-05-16.rds")) 
+dat = read_rds(here("input","sequence_data_240528","4_data_AUD diagnosis and intervention sequences_2024-05-28.rds")) 
 # create an interv_id running within treatment type instead of across treatment types
 dat = dat %>% left_join(dat %>%  
   select(pragmaid, period, interv.type, interv_id) %>%
@@ -142,7 +142,8 @@ m7 = poLCA::poLCA(f, dat_qwt_num, nclass = 7, graph = T, maxiter = 100000, nrep 
 dat_qwt_num$predclass = eval(parse(text = paste0("m", classnum, "$predclass")))
 dat_qwt_num %>% 
   select(pragmaid, predclass) %>%
-  write_csv(here("output", "sequence_data_24m_monthly_lca_results.csv"))
+  write_csv(here("output", 
+                 paste0("1_sequence_data_24m_monthly_lca_results_",Sys.Date(),".csv")))
 
 ```
 
@@ -218,7 +219,7 @@ dat_qwt_num %>%
   labs(x = "number of quarters after AUD diagnosis",
        y = "[%] Individuals using Service")
 
-ggsave(paste0("output/","figures/","fig_classes_lineplot_class6_",Sys.Date(),".png"), width = 10, height = 6)
+ggsave(paste0("output/","figures/","1_fig_classes_lineplot_class6_",Sys.Date(),".png"), width = 10, height = 6)
 
 
 ```
@@ -271,7 +272,7 @@ dat_pred %>%
   labs(x = "Intervention", y = "Anteil Personen innerhalb Intervention", fill = "Anzahl Interventionen") + 
   coord_flip()
 
-ggsave(paste0("output/","figures/","fig_classes_barplot.png"), width = 10, height = 6)
+ggsave(paste0("output/","figures/","1_fig_classes_barplot.png"), width = 10, height = 6)
 
 
 ```
