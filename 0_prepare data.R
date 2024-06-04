@@ -472,3 +472,11 @@ saveRDS(data, paste0(inpath,"input data_person level.RDS"))
 saveRDS(interv.dat, paste0(inpath,"input data_intervention level.RDS"))
 saveRDS(elix.dat, paste0(inpath,"input data_elixhauser detailed data.RDS"))
 
+write.csv(data[,.(pragmaid,sex,age,emp.type,
+                  bado = as.numeric(bado),
+                  inpat = as.numeric(inpat),
+                  medi = as.numeric(medi),
+                  psych_full = as.numeric(psych_full),
+                  psych_short = as.numeric(psych_short),
+                  qwt = as.numeric(qwt),
+                  reha = as.numeric(reha))], paste0(inpath,"input data_for mplus.csv"), row.names = F)
