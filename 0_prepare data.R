@@ -180,93 +180,41 @@ length(unique(data$pragmaid)) # 9491
 
 comorb.dat <- diag.dat[pragmaid %in% unique(data$pragmaid)]
 
-##  keep all (or only certain?) diagnoses
+##  keep all diagnoses
 comorb.dat[, table(setting, icd_type)]
 comorb.dat <- comorb.dat[icd_type %in% c("confirmed","primary","any")]
 nrow(comorb.dat) # 2700719
 
-##  3 periods: 1) baseline // 2) 1st year post AUD // 3) 2nd year post AUD 
-
-sel.dat.period1 <- unique(interv.dat[,.(pragmaid,
+##  3 periods: 1) baseline -> 12 months look behind window
+sel.dat.period <- unique(interv.dat[,.(pragmaid,
                                         start = date.period.start,
                                         end = date.aud)])
-sel.dat.period2 <- unique(interv.dat[,.(pragmaid,
-                                        start = date.aud,
-                                        end = date.aud+years(1))])
-sel.dat.period3 <- unique(interv.dat[,.(pragmaid,
-                                        start = date.aud+years(1),
-                                        end = date.period.end)])
 
 ### period 1:
-comorb.period1 <- merge(comorb.dat,
-                        sel.dat.period1, 
-                        by = c("pragmaid"), all.x = T)
-comorb.period1 <- unique(comorb.period1[date.diag.start %between% list(start,end),
+comorb.dat <- merge(comorb.dat,
+                    sel.dat.period, 
+                    by = c("pragmaid"), all.x = T)
+comorb.dat <- unique(comorb.dat[date.diag.start %between% list(start,end),
                                         .(pragmaid,icd)])
-nrow(comorb.period1) # 199086
+nrow(comorb.dat) # 199086
 
-### period 2:
-comorb.period2 <- merge(comorb.dat,
-                        sel.dat.period2, 
-                        by = c("pragmaid"), all.x = T)
-comorb.period2 <- unique(comorb.period2[date.diag.start %between% list(start,end),
-                                 .(pragmaid,icd)])
-nrow(comorb.period2) # 209187
-
-### period 3:
-comorb.period3 <- merge(comorb.dat,
-                        sel.dat.period3, 
-                        by = c("pragmaid"), all.x = T)
-comorb.period3 <- unique(comorb.period3[date.diag.start %between% list(start,end),
-                                 .(pragmaid,icd)])
-nrow(comorb.period3) # 200495
-
-rm(sel.dat.period1, sel.dat.period2, sel.dat.period3)
+rm(sel.dat.period)
 
 ##  any non-matches?
-comorb.period1[is.na(pragmaid)]
-comorb.period2[is.na(pragmaid)]
-comorb.period3[is.na(pragmaid)]
+comorb.dat[is.na(pragmaid)]
 
 ##  get comorbidity indices
 ### period 1
-elix.dat.period1 <- comorbidity::comorbidity(x = comorb.period1,
-                                             id = "pragmaid",
-                                             code = "icd",
-                                             map = "elixhauser_icd10_quan",
-                                             assign0 = T,
-                                             tidy.codes = T)
+elix.dat <- comorbidity::comorbidity(x = comorb.dat,
+                                     id = "pragmaid",
+                                     code = "icd",
+                                     map = "elixhauser_icd10_quan",
+                                     assign0 = T,
+                                     tidy.codes = T)
 
-names(elix.dat.period1)[!names(elix.dat.period1) %like% "pragmaid"] <- paste0("elix_",names(elix.dat.period1)[!names(elix.dat.period1) %like% "pragmaid"])
-
-### period 2
-elix.dat.period2 <- comorbidity::comorbidity(x = comorb.period2,
-                                             id = "pragmaid",
-                                             code = "icd",
-                                             map = "elixhauser_icd10_quan",
-                                             assign0 = T,
-                                             tidy.codes = T)
-
-names(elix.dat.period2)[!names(elix.dat.period2) %like% "pragmaid"] <- paste0("elix_",names(elix.dat.period2)[!names(elix.dat.period2) %like% "pragmaid"])
-
-### period 3
-elix.dat.period3 <- comorbidity::comorbidity(x = comorb.period3,
-                                             id = "pragmaid",
-                                             code = "icd",
-                                             map = "elixhauser_icd10_quan",
-                                             assign0 = T,
-                                             tidy.codes = T)
-
-names(elix.dat.period3)[!names(elix.dat.period3) %like% "pragmaid"] <- paste0("elix_",names(elix.dat.period3)[!names(elix.dat.period3) %like% "pragmaid"])
+names(elix.dat)[!names(elix.dat) %like% "pragmaid"] <- paste0("elix_",names(elix.dat)[!names(elix.dat) %like% "pragmaid"])
 
 ##  get sum score
-elix.dat.period1$period <- 1
-elix.dat.period2$period <- 2
-elix.dat.period3$period <- 3
-elix.dat <- rbind(elix.dat.period1,
-                  elix.dat.period2,
-                  elix.dat.period3)
-
 elix.dat_sum <- data.table(elix.dat)
 
   ### A) all categories
@@ -276,8 +224,8 @@ elix.dat_sum <- data.table(elix.dat)
                                                                               !names(elix.dat_sum) %like% "alcohol$|drug$|psycho$|depre$" & 
                                                                               !names(elix.dat_sum) %like% "^elix_sum"]])
 
-  elix.dat_sum <- dcast(elix.dat_sum[,.(pragmaid,period,elix_sum_all,elix_sum_nomental)], 
-                      pragmaid ~ period, value.var = c("elix_sum_all","elix_sum_nomental"))
+  elix.dat_sum <- elix.dat_sum[,.(pragmaid,elix_sum_all,elix_sum_nomental)]
+  elix.dat_sum[,summary(elix_sum_all - elix_sum_nomental)] # between 1 and 4
   
 data <- merge(data,
               elix.dat_sum, 
@@ -288,15 +236,7 @@ nrow(data) # 9491
 length(unique(data$pragmaid)) # 9491
 
 # missing elix data:
-data[is.na(elix_sum_nomental_1)] # none
-data[is.na(elix_sum_nomental_2)] # none
-data[is.na(elix_sum_nomental_3)] # 255 --> presumably 0 diagnoses in that period...
-
-  ##  example:
-  comorb.period3[pragmaid == elix.dat_sum[elix_sum_nomental_3 == 0, pragmaid][2]] ## -> 0 assigned only if any diagnoses are present
-
-data[is.na(elix_sum_nomental_3), table(died)] # 21 died
-data[is.na(elix_sum_nomental_3), elix_sum_nomental_3 := 0]
+data[is.na(elix_sum_nomental)] # none
 
 ##  3) ADD OTHER RELEVANT TIME-INVARYING VARIABLES
 #   .............................................
@@ -310,10 +250,6 @@ rm(add)
 nrow(data) # 9491
 length(unique(data$pragmaid)) # 9491
 
-# any deaths ? --> remove before LCA!
-data[date.death %between% list(date.period.start,date.period.end),.(gkv,date.death,date.period.start,date.period.end)]
-
-
 ##  4) DEFINE AGEGROUP
 #   .............................................
 
@@ -322,12 +258,9 @@ data[, summary(age)]
 data[is.na(age)] ## none
 
 # define agegroups
-data[, agegroup := ifelse(age <= 24, "18-24",
-                          ifelse(age <= 34, "25-34",
-                                 ifelse(age <= 44, "35-44",
-                                        ifelse(age <= 54, "45-54",
-                                               ifelse(age <= 64, "55-64",
-                                                      ifelse(age <= 74, "65-74", "75-96"))))))]
+data[, agegroup := ifelse(age <= 34, "18-34",
+                                 ifelse(age <= 54, "35-54",
+                                               ifelse(age <= 64, "55-64", "65-96")))]
 data[, prop.table(table(agegroup))]
 data[, table(age, agegroup)]
 data$agegroup <- factor(data$agegroup)
@@ -471,12 +404,3 @@ length(unique(data$pragmaid)) # 9491
 saveRDS(data, paste0(inpath,"input data_person level.RDS"))
 saveRDS(interv.dat, paste0(inpath,"input data_intervention level.RDS"))
 saveRDS(elix.dat, paste0(inpath,"input data_elixhauser detailed data.RDS"))
-
-write.csv(data[,.(pragmaid,sex,age,emp.type,
-                  bado = as.numeric(bado),
-                  inpat = as.numeric(inpat),
-                  medi = as.numeric(medi),
-                  psych_full = as.numeric(psych_full),
-                  psych_short = as.numeric(psych_short),
-                  qwt = as.numeric(qwt),
-                  reha = as.numeric(reha))], paste0(inpath,"input data_for mplus.csv"), row.names = F)
