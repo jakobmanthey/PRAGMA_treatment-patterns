@@ -82,6 +82,10 @@ rm(filename)
 ##  1) Sample description
 # -------------------------------------------------------
 
+# Elixhauser
+data[, mean(elix_sum_nomental == 0)]
+data[, mean(elix_sum_nomental %in% c(1,2))]
+data[, mean(elix_sum_nomental >=3)]
 
 ##  2) Treatment utilization
 # -------------------------------------------------------
@@ -105,9 +109,6 @@ data[interv_types_n>0,.(p1 = sum(interv_types_n==1)/.N,
 ##  3) Treatment utilization patterns
 # -------------------------------------------------------
 
-# number of interventions:
-interv.dat[!is.na(date.interv.start), sum(!is.na(date.interv.start)), by = .(pragmaid,interv.type)][,mean(V1), by = interv.type]
-
 # % intervention
 data[, mean(bado)] # 4%
 data[, mean(inpat)] # 7%
@@ -122,6 +123,7 @@ data[, table(qwt,reha)]
 data[, prop.table(table(qwt,reha),1)]
 
 ##  CLASS PROPORTIONS:
+data[, table(class)]
 data[, prop.table(table(class))]
 data[interv.any == T, prop.table(table(class))]
 
@@ -162,12 +164,33 @@ summary(glm(emp.type == "unemployed" ~  age + sex + class, data, family = "binom
 # -------------------------------------------------------
 
 # comorbidity baseline:
-data[, .(elix_all = round(mean(elix_sum_all_1),1),
-         elix_nomental = round(mean(elix_sum_nomental_1),1)), by = class][order(class)]
+data[, .(elix_all = round(mean(elix_sum_all),1),
+         elix_nomental = round(mean(elix_sum_nomental),1)), by = class][order(class)]
+data[, nat_deutsch := nationality == "deutsch"]
+data[, age_z := (age-mean(age))/sd(age)]
 
-summary(glm(elix_sum_nomental_1 ~  age + sex + emp.type, data, family = "poisson"))
-summary(glm(elix_sum_nomental_1 ~  age + sex + emp.type + class, data, family = "poisson"))
+# poisson (not reported)
+summary(glm(elix_sum_nomental ~  age_z + sex + emp.type + nat_deutsch, data, family = "poisson"))
+summary(glm(elix_sum_nomental ~  age_z + sex + emp.type + nat_deutsch + class, data, family = "poisson"))
 # --> sig diff for classes 1-4
+
+mod.out <- glm(elix_sum_nomental ~  age_z + sex + emp.type + nat_deutsch + class, data, family = "poisson")
+stargazer::stargazer(mod.out, type = "html", ci = T, apply.coef = exp, p.auto = F, #report = c("v","c","s","p"),
+                     out = paste0("output/tables/SUPP_TAB1_",Sys.Date(),".html"))
+
+# zero-inflated
+
+mod.out <- pscl::zeroinfl(elix_sum_nomental ~ age_z + sex + emp.type + nat_deutsch + class | age_z + sex, data)
+summary(mod.out)
+out <- data.table(var = names(coef(mod.out)),
+                  coef = format(exp(coef(mod.out)), digits = 2, nsmall = 1),
+                  cil = format(exp(confint(mod.out))[,1], digits = 2, nsmall = 1),
+                  ciu = format(exp(confint(mod.out))[,2], digits = 2, nsmall = 1))
+out <- out[,.(var, out = paste0(coef, " (",cil, " to ", ciu, ")"))]
+
+write.csv(out,
+          paste0(outpath,"tables/SUPP_TAB1_ZINB_",Sys.Date(),".csv"),
+          row.names = F)
 
 
 
@@ -183,20 +206,39 @@ summary(glm(elix_sum_nomental_1 ~  age + sex + emp.type + class, data, family = 
 
 # description of interventions
 
+# number of interventions:
+interv.dat[!is.na(date.interv.start), sum(!is.na(date.interv.start)), by = .(pragmaid,interv.type)][,mean(V1), by = interv.type]
+
+##  PSYCH-BRIEF
+interv.dat[interv.type == "psych_short" & !is.na(date.interv.start),.(n = length(unique(date.interv.start))), by = pragmaid][,summary(n)]
+##  PSYCH-LONG
+interv.dat[interv.type == "psych_full" & !is.na(date.interv.start),.(n = length(unique(date.interv.start))), by = pragmaid][,summary(n)]
+##  PHARMA
+interv.dat[interv.type == "medi" & !is.na(date.interv.start),.(n = length(unique(date.interv.start))), by = pragmaid][,summary(n)]
+##  INPAT-STAND
+interv.dat[interv.type == "inpat" & !is.na(date.interv.start),.(n = length(unique(date.interv.start))), by = pragmaid][,summary(n)]
+interv.dat[interv.type == "inpat" & !is.na(date.interv.start),.(n.days = date.interv.end - date.interv.start), by = pragmaid][,summary(as.numeric(n.days+1))]
+##  REHA
+interv.dat[interv.type == "reha" & !is.na(date.interv.start),.(n = length(unique(date.interv.start))), by = pragmaid][,summary(n)]
+interv.dat[interv.type == "reha" & !is.na(date.interv.start),.(n.days = date.interv.end - date.interv.start), by = pragmaid][,summary(as.numeric(n.days+1))]
+
 ##  2) TABLE 2
 #   .............................................
 
-vars <- names(data)[names(data) %like% "sex|age$|emp.type|elix_sum_nomental"]
+vars <- names(data)[names(data) %like% "sex|age$|emp.type|elix_sum_nomental|nationality"]
 
 tab1 <- rbind(data[,c(list(group = "All"), .SD),.SDcols = vars],
               data[interv.any == T,c(list(group = "Any intervention"), .SD),.SDcols = vars],
-              data[bado == T,c(list(group = "Counselling"), .SD),.SDcols = vars],
-              data[inpat == T,c(list(group = "Inpatient (standard)"), .SD),.SDcols = vars],
-              data[qwt == T,c(list(group = "Inpatient (intense)"), .SD),.SDcols = vars],
-              data[reha == T,c(list(group = "Rehabilitation"), .SD),.SDcols = vars],
-              data[medi == T,c(list(group = "Pharmacological"), .SD),.SDcols = vars],
-              data[psych_full == T,c(list(group = "Psychotherapy"), .SD),.SDcols = vars],
-              data[psych_short == T,c(list(group = "Psych. brief contact"), .SD),.SDcols = vars])
+              data[bado == T,c(list(group = "COUNSEL"), .SD),.SDcols = vars],
+              data[inpat == T,c(list(group = "INPAT-STAND"), .SD),.SDcols = vars],
+              data[qwt == T,c(list(group = "INPAT-INTENSE"), .SD),.SDcols = vars],
+              data[reha == T,c(list(group = "REHA"), .SD),.SDcols = vars],
+              data[medi == T,c(list(group = "PHARMA"), .SD),.SDcols = vars],
+              data[psych_full == T,c(list(group = "PSYCH-FULL"), .SD),.SDcols = vars],
+              data[psych_short == T,c(list(group = "PSYCH-BRIEF"), .SD),.SDcols = vars])
+
+tab1[, table(nationality)] # regroup unbekannt --> 18 cases only
+tab1[, nationality := dplyr::recode(nationality,"unbekannt" = "nicht deutsch")]
 
 tab1$group <- factor(tab1$group, levels = unique(tab1$group))
 tab1$sex <- factor(tab1$sex)
@@ -208,20 +250,47 @@ tab1out <- tab1[, .(.N,
                     age_mean = format(mean(age), digits = 3, nsmall = 1),
                     age_iqr_low = format(quantile(age, 0.25), digits = 3, nsmall = 1),
                     age_iqr_high = format(quantile(age, 0.75), digits = 3, nsmall = 1),
+                    nat_prop = format(sum(nationality == "deutsch")/.N * 100, digits = 3, nsmall = 1),
                     empl_prop = format(sum(emp.type == "employed")/.N * 100, digits = 3, nsmall = 1),
-                    elix_mean = format(mean(elix_sum_nomental_1), digits = 2, nsmall = 1),
-                    elix_iqr_low = format(quantile(elix_sum_nomental_1, 0.25), digits = 3, nsmall = 1),
-                    elix_iqr_high = format(quantile(elix_sum_nomental_1, 0.75), digits = 3, nsmall = 1)), 
-                by = group]
+                    elix_mean = format(mean(elix_sum_nomental), digits = 2, nsmall = 1),
+                    elix_iqr_low = format(quantile(elix_sum_nomental, 0.25), digits = 3, nsmall = 1),
+                    elix_iqr_high = format(quantile(elix_sum_nomental, 0.75), digits = 3, nsmall = 1)), 
+                by = group][order(N, decreasing = T)]
 
 tab1out <- tab1out[,.(group,N,female_prop,
                       age = paste0(age_mean," (",age_iqr_low," to ",age_iqr_high,")"),
-                      empl_prop,
+                      empl_prop,nat_prop,
                       elix = paste0(elix_mean," (",elix_iqr_low," to ",elix_iqr_high,")"))]
 
 write.csv(tab1out,
           paste0(outpath,"tables/TAB1_descriptives_",Sys.Date(),".csv"),
           row.names = F)
+
+##  test any vs no intervention:
+temp <- data[,c(list(group = "Any intervention"), .SD),.SDcols = c(vars,"interv.any")]
+
+  # sex difference
+  temp[, prop.table(table(sex,interv.any),2)]
+  temp[, chisq.test(interv.any,sex)] # p <.001
+
+  # age difference
+  temp[, t.test(age ~ interv.any)] # p <.001
+  
+  # employment difference
+  temp[, prop.table(table(emp.type == "employed",interv.any),2)]
+  temp[, chisq.test(emp.type == "employed",interv.any)] # p <.001
+
+  # nationality difference
+  temp[, prop.table(table(nationality == "deutsch",interv.any),2)]
+  temp[, chisq.test(interv.any,nationality == "deutsch")] # p <.001
+  
+  # Elixhauser
+  temp[, t.test(elix_sum_nomental ~ interv.any)] # p <.001
+  
+
+##
+rm(vars, tab1, tab1out, temp)
+
 
 
 
@@ -274,7 +343,7 @@ rm(pdat)
 pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|elix_sum_nomental_1"]])
 pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
 
-pdat[, mean := mean(elix_sum_nomental_1), by = class_rev]
+pdat[, mean := mean(elix_sum_nomental), by = class_rev]
 
 ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental_1, fill = class_rev)) +
   geom_violin() +
