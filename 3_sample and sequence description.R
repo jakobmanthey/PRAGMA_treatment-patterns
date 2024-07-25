@@ -141,7 +141,7 @@ temp <- data[,.(class,bado,inpat,medi,psych_full,psych_short,qwt,reha)]
 temp <- melt(temp, id.vars = "class")
 temp[, mean(value), by = .(class,variable)][order(class,variable)]
 
-##  4) Treatment utilization patterns and sociodemographics
+##  4) Treatment utilization patterns and sociodemographics --> section to be added by Kilian, including export of Suppl Table 2
 # -------------------------------------------------------
 
 # sex:
@@ -316,13 +316,14 @@ pdat[, table(class_lab)]
 pdat$intervention <- factor(pdat$variable, levels = c("bado","inpat","qwt","reha","medi","psych_full","psych_short"))
 levels(pdat$intervention) <- c("Counselling",
                                "Inpatient (standard)",
-                               "Inpatient (intense)",
+                               "Inpatient (intensive)",
                                "Rehabilitation",
                                "Pharmacological",
                                "Psychotherapy",
                                "Psych. brief contact")
 pdat[, table(intervention,variable)]
 colors <- ggthemes::ggthemes_data$gdocs$colors$value[3:9]
+colors <- c("#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD", "#8C564B", "#E377C2")
 
 ggplot(pdat, aes(x = rel_time, y = dv, col = intervention)) +
   facet_grid(.~class_lab) + 
@@ -334,29 +335,12 @@ ggplot(pdat, aes(x = rel_time, y = dv, col = intervention)) +
   guides(color = guide_legend(ncol = 4, nrow = 2))
 
 ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".png"), width = 12, height = 6)
+ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".tiff"), width = 12, height = 6)
 
 rm(pdat)
 
-##  Fig 2) comorbidity
+##  Fig 2) to be added by Kilian
 #   .............................................
-
-pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|elix_sum_nomental_1"]])
-pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
-
-pdat[, mean := mean(elix_sum_nomental), by = class_rev]
-
-ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental_1, fill = class_rev)) +
-  geom_violin() +
-  geom_point(aes(y = mean), size = 3, shape = 25, fill = "black") +
-  scale_fill_viridis_d("", guide = F) +
-  coord_flip() +
-  theme(legend.position = "bottom") +
-  scale_x_discrete("") + 
-  scale_y_continuous("Sum Score Elixhauser Comorbidity Index (0-27)")
-
-ggsave(paste0(outpath,"figures/Fig 3_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
-
-rm(pdat)
 
 
 
@@ -367,54 +351,7 @@ rm(pdat)
 # 5) SUPPLEMENTARY FIGURES
 # ______________________________________________________________________________________________________________________
 
-##  Supplementary Figure 1) classes by age and sex
-#   .............................................
-
-pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|sex|age"]])
-
-pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
-
-pdat_prop <- unique(pdat[, .(n_female = sum(sex == "female"),n_group = .N), by = .(class_rev)])
-pdat_prop[, prop_class_female := round(n_female/n_group,2)]
-
-ggplot(pdat, aes(x = class_rev, y = age)) +
-  geom_boxplot(aes(fill = class_rev)) + 
-  geom_label(data = pdat_prop, aes(x = class_rev,y = 80, label = scales::percent(prop_class_female), group = class_rev), 
-             position = position_dodge(width = 0.75), fill = "#FFDF00") +
-  scale_fill_viridis_d(guide = F) +
-  scale_x_discrete("") +
-  scale_y_continuous("Age in years") +
-  theme(legend.position = "bottom") +
-  coord_flip()
-
-ggsave(paste0(outpath,"figures/Suppl Fig 1_classes_sex and age_",Sys.Date(),".png"), width = 10, height = 5)
-
-rm(pdat, pdat_prop)
-
-
-##  Supplementary Figure 2) employment
-#   .............................................
-
-pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|emp.type|sex"]])
-pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
-
-pdat$emp.type   <- factor(pdat$emp.type, levels = rev(levels(pdat$emp.type)))
-
-ggplot(pdat, aes(x = class_rev, fill = emp.type)) +
-  geom_bar(position = "fill") +
-  scale_fill_viridis_d("") +
-  coord_flip() +
-  theme(legend.position = "bottom") +
-  guides(fill = guide_legend(ncol = 4, nrow = 1, reverse = TRUE)) + 
-  scale_x_discrete("") + 
-  scale_y_continuous("", label = scales::percent)
-
-ggsave(paste0(outpath,"figures/Suppl Fig 2_classes_employment_",Sys.Date(),".png"), width = 10, height = 5)
-
-rm(pdat)
-
-
-##  Supplementary Figure 3) heatmap elixhauser
+##  Supplementary Figure 1) heatmap elixhauser
 #   .............................................
 
 pdat <- merge(data[,.(pragmaid,class_lab2)],
@@ -439,30 +376,75 @@ ggsave(paste0(outpath,"figures/Suppl Fig 3_classes_heatmap comorbidity_",Sys.Dat
 
 rm(pdat, pdat2)
 
+##  Supplementary Figure 2) heatmap cross utilisation --> to be added by Kilian
+#   .............................................
 
-##  Supplementary Figure 4) comorbidity over time
+
+##  Supplementary Figure 3) distribution age and sex by class
+#   .............................................
+
+pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|sex|age"]])
+
+pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
+
+pdat_prop <- unique(pdat[, .(n_female = sum(sex == "female"),n_group = .N), by = .(class_rev)])
+pdat_prop[, prop_class_female := round(n_female/n_group,2)]
+
+ggplot(pdat, aes(x = class_rev, y = age)) +
+  geom_boxplot(aes(fill = class_rev)) + 
+  geom_label(data = pdat_prop, aes(x = class_rev,y = 80, label = scales::percent(prop_class_female), group = class_rev), 
+             position = position_dodge(width = 0.75), fill = "#FFDF00") +
+  scale_fill_viridis_d(guide = F) +
+  scale_x_discrete("") +
+  scale_y_continuous("Age in years") +
+  theme(legend.position = "bottom") +
+  coord_flip()
+
+ggsave(paste0(outpath,"figures/Suppl Fig 3_classes_sex and age_",Sys.Date(),".png"), width = 10, height = 5)
+
+rm(pdat, pdat_prop)
+
+
+##  Supplementary Figure 4) distribution employment by class
+#   .............................................
+
+pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|emp.type|sex"]])
+pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
+
+pdat$emp.type   <- factor(pdat$emp.type, levels = rev(levels(pdat$emp.type)))
+
+ggplot(pdat, aes(x = class_rev, fill = emp.type)) +
+  geom_bar(position = "fill") +
+  scale_fill_viridis_d("") +
+  coord_flip() +
+  theme(legend.position = "bottom") +
+  guides(fill = guide_legend(ncol = 4, nrow = 1, reverse = TRUE)) + 
+  scale_x_discrete("") + 
+  scale_y_continuous("", label = scales::percent)
+
+ggsave(paste0(outpath,"figures/Suppl Fig 4_classes_employment_",Sys.Date(),".png"), width = 10, height = 5)
+
+rm(pdat)
+
+
+##  Supplementary Figure 5) distribution comorbidity by class
 #   .............................................
 
 pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|elix_sum_nomental"]])
-pdat <- melt(pdat, id.vars = c("pragmaid","class_lab2"), variable.name = "period")
-pdat[, period := substr(period,19,19)]
-pdat[, period_num := as.numeric(period)]
+pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
 
-pdat[, mean := mean(value), by = .(class_lab2,period)]
+pdat[, mean := mean(elix_sum_nomental), by = class_rev]
 
-#pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
-
-ggplot(pdat, aes(x = period_num, y = mean, fill = class_lab2, color = class_lab2)) +
-  geom_point(size = 3, shape = 25) +
-  geom_line() +
-  scale_fill_viridis_d("") +
-  scale_color_viridis_d("") +
+ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
+  geom_violin() +
+  geom_point(aes(y = mean), size = 3, shape = 25, fill = "black") +
+  scale_fill_viridis_d("", guide = "none") +
+  coord_flip() +
   theme(legend.position = "bottom") +
-  guides(fill = guide_legend(ncol = 4, nrow = 2)) + 
-  scale_x_continuous("Year", breaks = c(1,2,3)) + 
-  scale_y_continuous("Sum Score\nElixhauser Comorbidity Index (0-27)")
+  scale_x_discrete("") + 
+  scale_y_continuous("Sum Score Elixhauser Comorbidity Index (0-27)")
 
-ggsave(paste0(outpath,"figures/Suppl Fig 4_classes_comorbidity over time_",Sys.Date(),".png"), width = 9, height = 5)
+ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
 
 rm(pdat)
 
