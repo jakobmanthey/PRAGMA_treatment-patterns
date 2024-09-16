@@ -23,8 +23,7 @@ inpath <- paste0("input/")
 outpath <- paste0("output/")
 
 # load libraries
-library(tidyverse) # TODO: Jakob wie bekommen wir hier tidyverse und datatable zusammen? 
-# Tidyverse maskiert einige datatable funktionen. Aber meine Graphiken, Tabellen usw basieren drauf
+library(tidyverse) 
 library( nnet )
 library( kableExtra )
 library( data.table )
