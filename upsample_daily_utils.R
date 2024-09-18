@@ -567,3 +567,85 @@ venngardium_leviosa = function(dat, varname, class, limit = NULL, showplot = F){
   if(showplot) plot(venneuler(res), main = paste0(varname, " Class ", class ))
   return(res)
 }
+
+
+
+# MODEL REPORTING CONVENIENCE FUNCTIONS 
+get_entropy = function(m, digits = 2){
+  error_prior <- entropy(m$P) # Class proportions
+  error_post <- mean(apply(m$posterior, 1, entropy))
+  R2_entropy <- (error_prior - error_post) / error_prior
+  return(round(R2_entropy, 2))
+}
+
+smallest_class = function(predclass, type = c("n", "rel")){
+  type = match.arg(type)
+  res = data.frame(predclass = predclass) %>%
+    group_by(predclass) %>% 
+    summarize(n = n()) %>% 
+    ungroup() %>% 
+    mutate(rel = n/sum(n)) %>% 
+    select(all_of(type)) %>% min()
+  if(type == "rel") res = round(res*100, 1)
+  return(res)
+}
+
+smallest_lcprob = function(m){
+  
+  res = data.frame(predclass = m$predclass)
+  lc = n_distinct(res$predclass)
+  for(i in 1:lc){ 
+    resres = data.frame(x = m$posterior[ , i])
+    names(resres) = paste0("LC", i)
+    res = cbind(res, resres)
+  }
+  
+  res %>%
+    group_by(predclass) %>% 
+    summarize(across(starts_with("LC"), mean)) %>% 
+    pivot_longer(cols = starts_with("LC"),
+                 names_to = "Class",
+                 values_to = "prob") %>% 
+    group_by(predclass) %>% 
+    summarize(maxprob = max(prob)) %>% 
+    ungroup() %>% 
+    mutate(maxprob = round(maxprob*100, 1)) %>% 
+    filter(maxprob == min(maxprob)) %>% 
+    select(maxprob) %>% pull()
+  
+}
+
+mean_lcprob = function(m){
+  res = data.frame(predclass = m$predclass)
+  lc = n_distinct(res$predclass)
+  for(i in 1:lc){ 
+    resres = data.frame(x = m$posterior[ , i])
+    names(resres) = paste0("LC", i)
+    res = cbind(res, resres)
+  }
+  
+  res %>%
+    group_by(predclass) %>% 
+    summarize(across(starts_with("LC"), mean)) %>% 
+    pivot_longer(cols = starts_with("LC"),
+                 names_to = "Class",
+                 values_to = "prob") %>% 
+    group_by(predclass) %>% 
+    summarize(maxprob = max(prob)) %>% 
+    ungroup() %>% 
+    mutate(maxprob = round(maxprob*100, 1)) %>% 
+    summarize(meanprob = mean(maxprob)) %>% 
+    select(meanprob) %>% 
+    pull()
+  
+}
+
+
+get_entropy = function(m){
+  error_prior <- entropy(m$P) # Class proportions
+  error_post <- mean(apply(m$posterior, 1, entropy))
+  R2_entropy <- (error_prior - error_post) / error_prior
+  return(round(R2_entropy, 3))
+}
+entropy <- function(p) sum(-p * log(p), na.rm =T) 
+

@@ -40,13 +40,17 @@ library(tidyverse)
 library(here)
 library(furrr)
 library(vroom)
-here::i_am("1_perform LCA.qmd")
+library(viridis)
+here::i_am("1_perform_LCA.qmd")
 
 ```
 
 ```{r}
+
+
 # set analysis parameters
 analysis_vars = c("qwt", "inpat", "reha", "psych_short","psych_full", "medi", "bado") # set the variables which should be plotted and used within the analysis.
+covariates = c("emp.type")
 obs_period = "24m" # observational period
 resol = "quarter" # time resolution for plotting purposes starting from aud date. 
 # possible vals: "day", "week", "month", "quarter", "halfyear", "year"
@@ -57,8 +61,11 @@ classnum = 6# Which model should be used for subsequent analysis? (number equals
 ```
 
 ```{r}
-getwd()
+
+
 dat = read_rds(here("input","sequence_data_240528","4_data_AUD diagnosis and intervention sequences_2024-05-28.rds")) 
+dat_cov =  read_rds(here("input", "sequence_data_240528","input data_person level.RDS"))
+
 # create an interv_id running within treatment type instead of across treatment types
 dat = dat %>% left_join(dat %>%  
   select(pragmaid, period, interv.type, interv_id) %>%
@@ -79,11 +86,11 @@ dat_qwt = get_treatment_series_at_resolution(dat,
                                              resol = resol, # timestep resolution
                                              event = "aud", # event to start treatment series. currently does nothing (always set to aud)
                                              save = T, # save result when computed?
-                                             load_if_possible = F, # load if same config exists in cache folder, prompts user in order to check if right file is laoded
+                                             load_if_possible = T, # load if same config exists in cache folder, prompts user in order to check if right file is laoded
                                              render = T, # forces load without prompting (ovverrides prompt and just chooses the most likely one)
                                              only_intervs = T) %>% 
-  filter(interv.any.allquarters == T) # only use cases where an intervention happened because LCA has problems fitting all the zero cases
-
+  filter(interv.any.allquarters == T) %>%  # only use cases where an intervention happened because LCA has problems fitting all the zero cases
+  left_join(dat_cov %>% select(pragmaid, all_of(covariates)), by =c("pragmaid" = "pragmaid"))
 
 
 ```
@@ -98,7 +105,8 @@ dat_qwt_wide = dat_qwt %>%
   ungroup() %>% 
   select(pragmaid,
          rel_time, 
-         all_of(analysis_vars)
+         all_of(analysis_vars), 
+         all_of(covariates)
          ) %>% 
   pivot_wider(id_cols = pragmaid,
               names_from = rel_time,
@@ -117,6 +125,7 @@ Now, create the formula and run LCA models on the dataset. We will try a 2-7 cla
 
 ```{r}
 #| label: LCA-Outputs
+#| cache: true
 
 f  = as.formula(paste0("cbind(",paste(analysis_vars, collapse = ","), ")~1" ))
 # should equal:
@@ -127,7 +136,8 @@ f  = as.formula(paste0("cbind(",paste(analysis_vars, collapse = ","), ")~1" ))
 # 2 = Yes
 dat_qwt_num = dat_qwt %>%
   group_by(pragmaid) %>%
-  summarize_at(analysis_vars, ~any(.x) + 1)
+  summarize_at(analysis_vars, ~any(.x) + 1) %>% 
+   left_join(dat_cov %>% select(pragmaid, all_of(covariates)), by =c("pragmaid" = "pragmaid")) 
 
 
 set.seed(341)
@@ -139,11 +149,101 @@ m6 = poLCA::poLCA(f, dat_qwt_num, nclass = 6, graph = T, maxiter = 100000, nrep 
 m7 = poLCA::poLCA(f, dat_qwt_num, nclass = 7, graph = T, maxiter = 100000, nrep = 5)
 
 # choose the n class solution for both models, the lca and the hierarchical clusterings
-dat_qwt_num$predclass = eval(parse(text = paste0("m", classnum, "$predclass")))
+dat_qwt_num$predclass = eval(parse(text = paste0("m", classnum, "$predclass"))) %>% as.factor()
+if(classnum == 6){
+  dat_qwt_num = dat_qwt_num %>% mutate(
+    predclass = recode_factor(predclass, 
+                       "1" = "4:rehabilitation",
+                       "2" = "6:mixed",
+                       "3" = "1:brief psychiatric care",
+                       "4" = "2:inpatient standard only",
+                       "5" = "3:inpatient intensive",
+                       "6" = "5:counseling"
+                       ) %>% as.character() %>% as.factor()
+    )
+    }
+
 dat_qwt_num %>% 
   select(pragmaid, predclass) %>%
   write_csv(here("output", 
                  paste0("1_sequence_data_24m_monthly_lca_results_",Sys.Date(),".csv")))
+
+
+### Solutions with covariates. Models do not converge in realistic solutions
+fc  = as.formula(paste0(
+  "cbind(",paste(analysis_vars, collapse = ","), ")~" ,
+  paste(covariates, collapse = "+")))
+
+mc2 = poLCA::poLCA(fc, dat_qwt_num, nclass = 2, graph = T, maxiter = 100000, nrep = 5)
+mc3 = poLCA::poLCA(fc, dat_qwt_num, nclass = 3, graph = T, maxiter = 100000, nrep = 5)
+mc4 = poLCA::poLCA(fc, dat_qwt_num, nclass = 4, graph = T, maxiter = 100000, nrep = 5)
+mc5 = poLCA::poLCA(fc, dat_qwt_num, nclass = 5, graph = T, maxiter = 100000, nrep = 5)
+mc6 = poLCA::poLCA(fc, dat_qwt_num, nclass = 6, graph = T, maxiter = 100000, nrep = 5)
+mc7 = poLCA::poLCA(fc, dat_qwt_num, nclass = 7, graph = T, maxiter = 100000, nrep = 5)
+
+dat_qwt_num$predclassC = eval(parse(text = paste0("mc", classnum, "$predclass")))
+dat_qwt_num %>%
+  select(pragmaid, predclass, predclassC) %>%
+  write_csv(here("output",
+                 paste0("1_sequence_data_24m_monthly_lca_results_",Sys.Date(),".csv")))
+
+```
+
+### Class remapping
+
+```{r}
+
+saveRDS(m2, file = here("input", "LCA_model_2.rds"))
+saveRDS(m3, file = here("input", "LCA_model_3.rds"))
+saveRDS(m4, file = here("input", "LCA_model_4.rds"))
+saveRDS(m5, file = here("input", "LCA_model_5.rds"))
+saveRDS(m6, file = here("input", "LCA_model_6.rds"))
+saveRDS(m7, file = here("input", "LCA_model_7.rds"))
+
+
+
+
+```
+
+### Model summary table
+
+```{r}
+
+
+sumtab = data.frame(Models = str_c(c(2,3,4,5,6,7), " Class"),
+                    LL = c(m2$llik, m3$llik, m4$llik, m5$llik, m6$llik, m7$llik),
+                    BIC = c(m2$bic, m3$bic, m4$bic, m5$bic, m6$bic, m7$bic), 
+                    "Smallest Class (n)" = c(smallest_class(m2$predclass, "n"),
+                                             smallest_class(m3$predclass, "n"),
+                                             smallest_class(m4$predclass, "n"),
+                                             smallest_class(m5$predclass, "n"),
+                                             smallest_class(m6$predclass, "n"),
+                                             smallest_class(m7$predclass, "n")),
+                    
+                    "Smallest Class (%)" = c(smallest_class(m2$predclass, "rel"),
+                                             smallest_class(m3$predclass, "rel"),
+                                             smallest_class(m4$predclass, "rel"),
+                                             smallest_class(m5$predclass, "rel"),
+                                             smallest_class(m6$predclass, "rel"),
+                                             smallest_class(m7$predclass, "rel")),
+                    Entropy = c(get_entropy(m2), 
+                                get_entropy(m3),
+                                get_entropy(m4),
+                                get_entropy(m5),
+                                get_entropy(m6),
+                                get_entropy(m7)),
+                    
+                    "ALCPP min" = c(smallest_lcprob(m2), 
+                                    smallest_lcprob(m3),
+                                    smallest_lcprob(m4),
+                                    smallest_lcprob(m5),
+                                    smallest_lcprob(m6), 
+                                    smallest_lcprob(m7))
+                    )
+
+sumtab %>% knitr::kable()
+
+
 
 ```
 
@@ -161,16 +261,16 @@ label_fn = function(dat){
 frac = data.frame(pragmaid = dat$pragmaid, predclass = dat$predclass %>% as.factor()) %>%
   group_by(predclass) %>% 
   summarize(n=n_distinct(pragmaid)) %>%
-  mutate(frac = str_c(round(n/sum(n),3)*100, "%"), 
-         predclass = as.integer(predclass))
+  mutate(frac = str_c(round(n/sum(n),3)*100, "%")) %>% 
+  arrange(predclass)
   #print(frac)
   res = c()
   for(i in 1:nrow(frac)){
   res[i] = paste0("C" ,
                   frac[i, ]$predclass,
-                  ", n = ",
+                  ",\nn = ",
                   frac[i, ]$n,
-                  ", (",
+                  ",\n(",
                   frac[i, ]$frac,
                   ")"
   )
@@ -219,7 +319,7 @@ dat_qwt_num %>%
   labs(x = "number of quarters after AUD diagnosis",
        y = "[%] Individuals using Service")
 
-ggsave(paste0("output/","figures/","1_fig_classes_lineplot_class6_",Sys.Date(),".png"), width = 10, height = 6)
+#ggsave(paste0("output/","figures/","1_fig_classes_lineplot_class6_",Sys.Date(),".png"), width = 10, height = 6)
 
 
 ```
@@ -227,13 +327,16 @@ ggsave(paste0("output/","figures/","1_fig_classes_lineplot_class6_",Sys.Date(),"
 ```{r}
 
 
-
-#TODO: Explore mosaic plots{
-#TODO: Zeitliche auflösung der zeitlichen Kreuztabellen durch Variablen ersetzen - 
-# TODO: Reha-qwt zusammenhang "Nicht fälle"! mit berücksichtigen als Spalte/Zeile
-#TODO: Quarter Annahme raus nehmen und behandlungen durch tatsächliche interventions IDs ersetzen
-#TODO: BLRT und Entropy berechnen!
-# TODO add 2-4 and 5+ group into multiple interv chart
+replace_interv = function(interv_col){
+  case_when( interv_col == "reha" ~ "REHAB",
+             interv_col == "psych_short" ~ "PSYCH-BRIEF", 
+             interv_col == "inpat" ~ "INPAT-STANDARD",
+             interv_col == "bado" ~ "COUNSEL",
+             interv_col == "psych_full" ~ "PSYCH-LONG",
+             interv_col == "medi" ~ "PHARMA",
+             interv_col == "qwt" ~ "INPAT-INTENSIVE", 
+            )
+}
 
 
 dat_pred = dat_qwt_num %>%
@@ -242,20 +345,19 @@ dat_pred = dat_qwt_num %>%
               filter(period == obs_period,
                      !is.na(interv_id_inner),
                      interv.any ==T)
-             )
+             ) %>% 
+  mutate(interv.type = replace_interv(interv.type))
 
-
-
-
+dat_pred %>% write_csv(here("input", "data_for_fig2.csv"))
 
 get_categorical_interv_num = function(num_intervs){
   if(num_intervs == 1) return("1")
-  if(num_intervs > 1 & num_intervs <= 4) return("2-4")
+  if(num_intervs > 1 & num_intervs <= 4) return("2 - 4")
   if(num_intervs > 4) return("5+")
 }
 get_categorical_interv = Vectorize(get_categorical_interv_num)
 
-dat_pred %>% 
+repeated_intervs = dat_pred %>% 
   group_by(predclass) %>% 
   mutate(n_class = n_distinct(pragmaid)) %>% 
   ungroup() %>% 
@@ -264,13 +366,26 @@ dat_pred %>%
   group_by(predclass, interv.type) %>% 
   mutate(n_had_interv = n_distinct(pragmaid)) %>% 
   group_by(predclass, interv.type, more_than_one_interv) %>% 
-  summarize(n = n_distinct(pragmaid), frac = n/mean(n_had_interv)) %>% 
+  summarize(n = n_distinct(pragmaid), frac = n/mean(n_had_interv), n_class = unique(n_class)) %>% 
+  group_by(predclass, interv.type) %>% 
+  mutate(class_frac = round(sum(n)/n_class, 2)* 100) %>% 
+  ungroup()
+ 
+
+repeated_intervs %>% 
   ggplot(aes(x = interv.type, y = frac * 100)) +
   geom_col(aes(fill = more_than_one_interv)) +
-  facet_wrap(~paste("Latent Class", predclass)) +
- # theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(x = "Intervention", y = "Anteil Personen innerhalb Intervention", fill = "Anzahl Interventionen") + 
-  coord_flip()
+  geom_text(aes(x = interv.type, y = 90,label = paste0(class_frac, "%")), data = repeated_intervs %>% select(predclass, interv.type, class_frac) %>% distinct() ) +
+  facet_wrap(~ predclass) +
+  labs(x = "Intervention type", y = "Patients within intervention [%]", fill = "Intervention repetitions") + 
+  coord_flip() + 
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 9),
+        strip.text = element_text(size = 12), 
+        axis.title.x = element_text(size = 15), 
+        axis.title.y = element_text(size = 15))
+  
 
 ggsave(paste0("output/","figures/","1_fig_classes_barplot.png"), width = 10, height = 6)
 
@@ -280,10 +395,24 @@ ggsave(paste0("output/","figures/","1_fig_classes_barplot.png"), width = 10, hei
 ```{r}
 
   
-dat_pred2 = dat_pred %>% select(pragmaid, predclass) %>% distinct() %>%  right_join(dat_qwt %>%
-  group_by(pragmaid) %>%
-  summarize_at(analysis_vars, ~any(.x))) 
+lookup = c("REHAB" = "reha",
+              "PSYCH-BRIEF" = "psych_short", 
+              "INPAT-STANDARD" = "inpat",
+              "COUNSEL" = "bado",
+              "PSYCH-LONG" = "psych_full",
+              "PHARMA" = "medi",
+              "INPAT-INTENSIVE" = "qwt"
+)
 
+dat_pred2 = dat_pred %>%
+  select(pragmaid, predclass) %>%
+  distinct() %>%
+  right_join(dat_qwt %>%
+  group_by(pragmaid) %>%
+  summarize_at(analysis_vars, ~any(.x))
+  ) %>% rename(all_of(lookup))
+
+dat_pred2 %>% write_csv(here("input","data_for_supp_fig_2.csv"))
 
 # helper function  
 get_overlap = function(dat,
@@ -353,57 +482,116 @@ return(resresres)
 
 
 
-overlaps_class_persp = map_dfr(1:classnum,
+overlaps_class_persp = map_dfr(unique(dat_pred2$predclass),
                                ~ get_inter_variable_overlaps(
                                             dat_pred2,
                                             cls =.x, 
-                                            analysis_vars,
+                                            analysis_vars = names(lookup),
                                             perspective = "class"))
 
 
-overlaps_interv_persp = map_dfr(1:classnum, 
+overlaps_interv_persp = map_dfr(unique(dat_pred2$predclass), 
                                 ~ get_inter_variable_overlaps(
                                             dat_pred2,
                                             cls =.x, 
-                                            analysis_vars,
+                                            analysis_vars = names(lookup),
                                             perspective = "intervention"))
 
-# TODO: Make the same for all without class
+
+remove_zero_perc = function(x){
+  if_else(x == "0%", "", x)
+}
+
+heatmap_pal = viridis::viridis_pal(begin = 0.2, direction = -1)
+cols = c("white", heatmap_pal(99))
+
 
 overlaps_class_persp %>%
-  pivot_longer(cols = all_of(analysis_vars),
+  pivot_longer(cols = all_of(names(lookup)),
                names_to = "var2", 
                values_to = "val") %>% 
   mutate(var = as.factor(var), var2 = as.factor(var2)) %>% 
-  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val)) +
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val*100)) +
   geom_tile() +
-  facet_wrap(~paste0("Latent Class ", predclass), scales = "free") +
-  geom_text(aes(label = paste0(round(val * 100, 0), "%")), size = 2) +
+  facet_wrap(~ predclass, scales = "free") +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%") %>% remove_zero_perc()), size = 2) +
   scale_fill_viridis_c() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 5),
+        axis.text.y = element_text(size = 5),
+        legend.position = "bottom") +
   scale_x_discrete(limits = rev(levels(var))) +
-  labs(x = "Anteil Inanspruchnahmen weiterer Intervention",
+  labs(x = "Further Interventions",
        y = "Intervention", 
-       fill = "Anteil Klasse[%]")
+       fill = "Fraction of Class[%]") +
+    scale_fill_gradientn(guide = guide_colorbar(
+    theme = theme(
+      legend.key.width = unit(10, "cm"),
+      legend.key.height = unit(.2, "cm"), 
+      legend.title = element_text(size = 10, vjust = 1.1), 
+    )),
+    colours  = cols)
 
-# TODO: Add a column where the absolute percantage of class who did intervention y is displayed
+ggsave(paste0("output/","figures/","2_fig_heatmap_class_perspektive.png"), width = 10, height = 6)
+
 overlaps_interv_persp %>%
-  pivot_longer(cols = all_of(analysis_vars),
+  pivot_longer(cols = all_of(names(lookup)),
                names_to = "var2", 
                values_to = "val") %>% 
     mutate(var = as.factor(var), var2 = as.factor(var2), 
            val = ifelse(is.nan(val), 0, val)) %>% 
-  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val)) +
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val*100)) +
   geom_tile() +
-  facet_wrap(~paste0("Latent Class ", predclass), scales = "free") +
-  geom_text(aes(label = paste0(round(val * 100, 0), "%")), size = 1.5) +
-  scale_fill_viridis_c() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0)) +
+  facet_wrap(~predclass) +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%") %>% remove_zero_perc), size = 2) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 7),
+        axis.text.y = element_text(size = 7), 
+        legend.position = "bottom", 
+        strip.text = element_text(size = 10)) +
   scale_x_discrete(limits = rev(levels(var))) +
-  labs(x = "Intervention",
-       y = "Anteil Inanspruchnahme weiterer Intervention",
-       fill = "Anteil X[%]")
+  labs(x = "Primary Intervention",
+       y = "Further Interventions",
+       fill = "Persons with intervention X who also used Y [%]") +
+  scale_fill_gradientn(guide = guide_colorbar(
+    theme = theme(
+      legend.key.width = unit(6, "cm"),
+      legend.key.height = unit(.2, "cm"), 
+      legend.title = element_text(size = 10, vjust = 1.1), 
+    )),
+    colours  = cols)
 
+
+ggsave(paste0("output/","figures/","3_fig_heatmap_intervention_perspektive.png"), width = 10, height = 6)
+```
+
+Taking a look at classification probabilities and entropy
+
+```{r}
+
+entropy <- function(p) sum(-p * log(p), na.rm =T) 
+
+nume.E <- -sum(m6$posterior * log(m6$posterior), na.rm =T)
+##Denominator (n*log(K)): ## n is a sample size, and K is a number of class
+deno.E <- 2860*log(6)
+##Relative Entropy
+Entro <- 1-(nume.E/deno.E)
+Entro
+
+
+
+error_prior <- entropy(m6$P) # Class proportions
+error_post <- mean(apply(m6$posterior, 1, entropy))
+R2_entropy <- (error_prior - error_post) / error_prior
+R2_entropy
+
+
+classprobs = data.frame(pragmaid = dat_qwt_num$pragmaid,predclass = dat_qwt_num$predclass, m6$posterior) %>% pivot_longer(cols = all_of(contains("X")), names_to = "LC", values_to = "prob")
+
+
+classprobs %>% group_by(predclass, LC) %>% summarize(meanprob = mean(prob)) %>% 
+  ggplot(aes(x = predclass, y = LC, fill = meanprob)) +
+  geom_tile() + 
+  geom_text(aes(label = round(meanprob, 2))) +
+  scale_fill_viridis_c()
 ```
 
 ```{r, include = F}
@@ -428,77 +616,9 @@ dat_pred %>%
   scale_fill_viridis_c() +
   labs(x = "Anzahl der Inanspruchnahmen innerhalb von 2 Jahren", y = "Intervention") + 
   scale_x_discrete()
-
-
-
-
-
-
-
 ```
 
-```{r, include=FALSE}
-  
-# 
-# 
-# get_variable_time_overlaps = function(dat, var1, var2, clss){
-#   var_a = ensym(var1)
-#   var_b = ensym(var2)
-#   
-# 
-# tst = dat_pred %>%
-#   filter(predclass == clss) %>%
-#   select(pragmaid, rel_time, all_of(c(var1,var2))) %>% filter(!!var_a == T|!!var_b==T) %>% 
-#   arrange(rel_time) %>% 
-#   pivot_wider(names_from = rel_time, values_from = all_of(c(var1, var2)), values_fill = F )
-# 
-# tmp = data.frame(time_var = names(tst) %>% str_subset(var2))
-# for(nam in names(tst) %>% str_subset(var1)){
-#   tmp2 = data.frame()
-#   for(nam2 in names(tst) %>% str_subset(var2)){
-#     tmp3 = data.frame(val = length(intersect(
-#                       tst$pragmaid[tst[[nam]]],
-#                       tst$pragmaid[tst[[nam2]]]
-#                           ))
-#                       )
-#     tmp2 = rbind(tmp2, tmp3)
-#     
-#   }
-#   tmp = cbind(tmp, tmp2)
-# }
-# names(tmp) = c("var_time", names(tst) %>% str_subset(var1))
-# return(tmp)
-# }
-# 
-# 
-# 
-# ttst = venngardium_leviosa(dat_pred, varname = "psych_short", class = 1, limit = 2, showplot = T)
-# 
-# venngardium_leviosa(dat_pred, varname = "inpat", class = 2, limit = 4, showplot = T)
-# 
-# 
-# 
-# 
-# 
-# 
-# get_variable_time_overlaps(dat_pred,"qwt" ,"reha",2)
-# get_variable_time_overlaps(dat_pred,"qwt" ,"psych_short",2)
-# 
-# 
-# View(get_variable_time_overlaps(dat_pred,"inpat" ,"qwt",3))
-# View(get_variable_time_overlaps(dat_pred,"inpat" ,"reha",3))
-# View(get_variable_time_overlaps(dat_pred,"qwt" ,"reha",3))
-# 
-# 
-# get_variable_time_overlaps(dat_pred,"inpat" ,"qwt",4)
-# 
-# 
-
-
-
-```
-
-We can display the same information with a Heatmap
+Display the same information with a Heatmap
 
 ```{r}
 #| title: Heatmap of LCA Results
@@ -546,7 +666,7 @@ dist2 = vegdist(dat_qwt_sum %>% dplyr::select(all_of(analysis_vars)), method = "
 
 ```
 
-Now we can apply some different hierarchical clustering methods and visualize the results via dendrograms.
+Now, apply some different hierarchical clustering methods and visualize the results via dendrograms.
 
 ```{r}
 #| title: Hierarchical Clustering and Dendrogram visualization
@@ -579,7 +699,7 @@ cuts = cutree(c1, k= length(unique(dat_qwt_num$predclass)))
 
 ```
 
-Now we can look at the proportion of individuals using a service over time, for the different clusters identified by the hierarchical clustering. This corresponds somewhat to binary "typical" group trajectories.
+Now, look at the proportion of individuals using a service over time, for the different clusters identified by the hierarchical clustering. This corresponds somewhat to binary "typical" group trajectories.
 
 ```{r}
 #| title: Proportion (%) Table
@@ -666,11 +786,6 @@ dat_qwt_wide %>%
 ```{r}
 
 
-#TODO: Explore mosaic plots{
-#TODO: Zeitliche auflösung der zeitlichen Kreuztabellen durch Variablen ersetzen - 
-# TODO: Reha-qwt zusammenhang "Nicht fälle"! mit berücksichtigen als Spalte/Zeile
-#TODO: Quarter Annahme raus nehmen und behandlungen durch tatsächliche interventions IDs ersetzen
-#TODO: BLRT und Entropy berechnen!
 
 dat_qwt_sum = dat_qwt_sum %>% 
   left_join(dat_qwt_wide %>% 
@@ -873,7 +988,3 @@ dat_qwt_wide %>%
 ## Conclusion
 
 Overall, LCA and Hierarchical Clustering seem to identify similar groups. However, the LCA approach is more sophisticated and can be used to model the data generating process. The hierarchical clustering approach is more exploratory and can be used to identify groups in a more data driven way.
-
-TODO:: Venn Diagramme updaten; Kreuztabelle zeitliche Personen Overlaps
-
-Class probs all time resolutions
