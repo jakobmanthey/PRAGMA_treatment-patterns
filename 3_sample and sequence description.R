@@ -23,13 +23,18 @@ inpath <- paste0("input/")
 outpath <- paste0("output/")
 
 # load libraries
+library(tidyverse) 
+library( nnet )
+library( kableExtra )
 library( data.table )
 library( ggplot2 )
 library( ggthemes )
 library( tidyr )
 library( stringr )
 library( lubridate )
+library( here )
 
+here::i_am("3_sample and sequence description.R")
 # themes and options
 theme_set( theme_gdocs() )
 options(scipen = 999)
@@ -141,7 +146,8 @@ temp <- data[,.(class,bado,inpat,medi,psych_full,psych_short,qwt,reha)]
 temp <- melt(temp, id.vars = "class")
 temp[, mean(value), by = .(class,variable)][order(class,variable)]
 
-##  4) Treatment utilization patterns and sociodemographics --> section to be added by Kilian, including export of Suppl Table 2
+
+##  4) Treatment utilization patterns and sociodemographics
 # -------------------------------------------------------
 
 # sex:
@@ -168,30 +174,6 @@ data[, .(elix_all = round(mean(elix_sum_all),1),
          elix_nomental = round(mean(elix_sum_nomental),1)), by = class][order(class)]
 data[, nat_deutsch := nationality == "deutsch"]
 data[, age_z := (age-mean(age))/sd(age)]
-
-# poisson (not reported)
-summary(glm(elix_sum_nomental ~  age_z + sex + emp.type + nat_deutsch, data, family = "poisson"))
-summary(glm(elix_sum_nomental ~  age_z + sex + emp.type + nat_deutsch + class, data, family = "poisson"))
-# --> sig diff for classes 1-4
-
-mod.out <- glm(elix_sum_nomental ~  age_z + sex + emp.type + nat_deutsch + class, data, family = "poisson")
-stargazer::stargazer(mod.out, type = "html", ci = T, apply.coef = exp, p.auto = F, #report = c("v","c","s","p"),
-                     out = paste0("output/tables/SUPP_TAB1_",Sys.Date(),".html"))
-
-# zero-inflated
-
-mod.out <- pscl::zeroinfl(elix_sum_nomental ~ age_z + sex + emp.type + nat_deutsch + class | age_z + sex, data)
-summary(mod.out)
-out <- data.table(var = names(coef(mod.out)),
-                  coef = format(exp(coef(mod.out)), digits = 2, nsmall = 1),
-                  cil = format(exp(confint(mod.out))[,1], digits = 2, nsmall = 1),
-                  ciu = format(exp(confint(mod.out))[,2], digits = 2, nsmall = 1))
-out <- out[,.(var, out = paste0(coef, " (",cil, " to ", ciu, ")"))]
-
-write.csv(out,
-          paste0(outpath,"tables/SUPP_TAB1_ZINB_",Sys.Date(),".csv"),
-          row.names = F)
-
 
 
 # ==================================================================================================================================================================
@@ -291,9 +273,6 @@ temp <- data[,c(list(group = "Any intervention"), .SD),.SDcols = c(vars,"interv.
 ##
 rm(vars, tab1, tab1out, temp)
 
-
-
-
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
@@ -339,24 +318,188 @@ ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".t
 
 rm(pdat)
 
-##  Fig 2) to be added by Kilian
+##  Fig 2) utilisation intensity
 #   .............................................
 
+dat_tmp = read_csv(here("input", "data_for_fig2.csv"))
+get_categorical_interv_num = function(num_intervs){
+  if(num_intervs == 1) return("1")
+  if(num_intervs > 1 & num_intervs <= 4) return("2 - 4")
+  if(num_intervs > 4) return("5+")
+}
+
+get_categorical_interv = Vectorize(get_categorical_interv_num)
+
+repeated_intervs = dat_tmp %>% 
+  group_by(predclass) %>% 
+  mutate(n_class = n_distinct(pragmaid)) %>% 
+  ungroup() %>% 
+  group_by(pragmaid, predclass, interv.type) %>%
+  mutate(num_intervs = n(), more_than_one_interv = get_categorical_interv(num_intervs)) %>% 
+  group_by(predclass, interv.type) %>% 
+  mutate(n_had_interv = n_distinct(pragmaid)) %>% 
+  group_by(predclass, interv.type, more_than_one_interv) %>% 
+  summarize(n = n_distinct(pragmaid), frac = n/mean(n_had_interv), n_class = unique(n_class)) %>% 
+  group_by(predclass, interv.type) %>% 
+  mutate(class_frac = round(sum(n)/n_class, 2)* 100) %>% 
+  ungroup()
+
+repeated_intervs %>% 
+  ggplot(aes(x = interv.type, y = frac * 100)) +
+  geom_col(aes(fill = more_than_one_interv)) +
+  geom_text(aes(x = interv.type, y = 90,label = paste0(class_frac, "%")), data = repeated_intervs %>% select(predclass, interv.type, class_frac) %>% distinct() ) +
+  facet_wrap(~ predclass) +
+  labs(x = "Intervention type", y = "Patients within intervention [%]", fill = "Intervention repetitions") + 
+  coord_flip() + 
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 9),
+        strip.text = element_text(size = 12), 
+        axis.title.x = element_text(size = 15), 
+        axis.title.y = element_text(size = 15))
+
+
+ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot",Sys.Date(),".png"), width = 12, height = 6)
+ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot",Sys.Date(),".tiff"), width = 12, height = 6)
+
+rm(dat_tmp)
+rm(repeated_intervs)
+
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+# ==================================================================================================================================================================
+
+# 5) SUPPLEMENTARY TABLES
+# ______________________________________________________________________________________________________________________
+
+##  1) SUPPLEMENTARY TABLE 1
+#   .............................................
+
+local({
+  m2 = readRDS(here("input", "LCA_model_2.rds"))
+  m3 = readRDS(here("input", "LCA_model_3.rds"))
+  m4 = readRDS(here("input", "LCA_model_4.rds"))
+  m5 = readRDS(here("input", "LCA_model_5.rds"))
+  m6 = readRDS(here("input", "LCA_model_6.rds"))
+  m7 = readRDS(here("input", "LCA_model_7.rds"))
+  
+  
+  source(here("upsample_daily_utils.R"))
+  
+  sumtab = data.frame(Models = str_c(c(2,3,4,5,6,7), " Class"),
+                      LL = c(m2$llik, m3$llik, m4$llik, m5$llik, m6$llik, m7$llik),
+                      BIC = c(m2$bic, m3$bic, m4$bic, m5$bic, m6$bic, m7$bic), 
+                      "Smallest Class (n)" = c(smallest_class(m2$predclass, "n"),
+                                               smallest_class(m3$predclass, "n"),
+                                               smallest_class(m4$predclass, "n"),
+                                               smallest_class(m5$predclass, "n"),
+                                               smallest_class(m6$predclass, "n"),
+                                               smallest_class(m7$predclass, "n")),
+                      
+                      "Smallest Class (%)" = c(smallest_class(m2$predclass, "rel"),
+                                               smallest_class(m3$predclass, "rel"),
+                                               smallest_class(m4$predclass, "rel"),
+                                               smallest_class(m5$predclass, "rel"),
+                                               smallest_class(m6$predclass, "rel"),
+                                               smallest_class(m7$predclass, "rel")),
+                      Entropy = c(get_entropy(m2), 
+                                  get_entropy(m3),
+                                  get_entropy(m4),
+                                  get_entropy(m5),
+                                  get_entropy(m6),
+                                  get_entropy(m7)),
+                      
+                      "ALCPP min" = c(smallest_lcprob(m2), 
+                                      smallest_lcprob(m3),
+                                      smallest_lcprob(m4),
+                                      smallest_lcprob(m5),
+                                      smallest_lcprob(m6), 
+                                      smallest_lcprob(m7))
+  )
+  
+  sumtab %>% write_csv("output/tables/", paste0("SUPP_TAB1_Model_Selection_", Sys.Date(), ".csv"))
+  
+})
+
+
+##  2) SUPPLEMENTARY TABLE 2
+#   .............................................
+
+##  multinomial regression
+
+local({
+  covariates = c("pragmaid","class_lab2", "predclass", "emp.type", "age", "sex", "nationality", "income")
+  dat4 = readr::read_rds(here("input", "input data_person level.RDS"))
+  
+  dat4 = dat4 %>%
+    select(all_of(covariates)) %>%
+    mutate(sex = as.factor(sex),
+           emp.type = as.factor(emp.type),
+           nationality = as.factor(nationality),
+           nationality = fct_collapse(nationality, "nicht deutsch" = c("nicht deutsch", "unbekannt")) , 
+           age = case_when( age <= 34 ~ "18-34",
+                            age > 34 & age <= 54 ~ "35-54",
+                            age > 54 & age <= 64 ~ "55-64", 
+                            age >= 65 ~ "65+") %>% as.factor() %>% fct_rev()
+    )
+  
+  set.seed(924)
+  
+  mod_fit = multinom(class_lab2 ~ emp.type + age + sex + nationality,
+                     data = dat4)
+  sm = summary(mod_fit)
+  sm
+  
+  
+  z = summary(mod_fit)$coefficients/summary(mod_fit)$standard.errors
+  p = (1 - pnorm(abs(z), 0, 1)) * 2
+  p %>% round(digits = 3) %>% print() #%>% knitr::kable() %>% print() #%>% kableExtra::save_kable(here("output", "multinom_regression_p_values.html"))
+  
+  # Risk Ratios
+  rs = exp(coef(mod_fit)) %>% as.data.frame() 
+  rs %>% mutate(LC = rownames(rs), .before = "(Intercept)") %>% 
+    pivot_longer(cols =  !c("(Intercept)", "LC"),
+                 names_to = "Independent Variable", 
+                 values_to = "Exp(coeffitient") %>%
+    print() #%>% kableExtra::save_kable(here("output", "multinom_regression_exp_coefficients.html"))
+  
+  round(exp(confint(mod_fit)),3) %>% print() #%>% knitr::kable() %>% print()# %>% kableExtra::save_kable(here("output", "multinom_regression_confidence_intervals.html"))
+})
+
+
+####  EXPORT SUPP_TAB2 ?!
+
+##  3) SUPPLEMENTARY TABLE 3
+#   .............................................
+
+# zero-inflated regression on comorbidity score
+
+mod.out <- pscl::zeroinfl(elix_sum_nomental ~ age_z + sex + emp.type + nat_deutsch + class | age_z + sex, data)
+summary(mod.out)
+out <- data.table(var = names(coef(mod.out)),
+                  coef = format(exp(coef(mod.out)), digits = 2, nsmall = 1),
+                  cil = format(exp(confint(mod.out))[,1], digits = 2, nsmall = 1),
+                  ciu = format(exp(confint(mod.out))[,2], digits = 2, nsmall = 1))
+out <- out[,.(var, out = paste0(coef, " (",cil, " to ", ciu, ")"))]
+
+write.csv(out,
+          paste0(outpath,"tables/SUPP_TAB3_ZINB_",Sys.Date(),".csv"),
+          row.names = F)
 
 
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
 
-# 5) SUPPLEMENTARY FIGURES
+# 6) SUPPLEMENTARY FIGURES
 # ______________________________________________________________________________________________________________________
 
 ##  Supplementary Figure 1) heatmap elixhauser
 #   .............................................
 
 pdat <- merge(data[,.(pragmaid,class_lab2)],
-              elix.dat[elix.dat$period ==1,],by = "pragmaid", all.x = T)
-pdat <- melt(pdat, id.vars = c("pragmaid","period", "class_lab2"))
+              elix.dat, by = "pragmaid", all.x = T)
+pdat <- melt(pdat, id.vars = c("pragmaid", "class_lab2"))
 pdat[, n_class := length(unique(pragmaid)), by = class_lab2]
 
 pdat2 <- unique(pdat[, .(percentage = sum(value == 1)/n_class,n_class), by = .(class_lab2,variable)])
@@ -372,13 +515,178 @@ ggplot(pdat2, aes(x = class_lab2, y = label, fill = percentage)) +
   scale_y_discrete("") +
   theme(axis.text.x = element_text(angle = 15, hjust = 1)) 
 
-ggsave(paste0(outpath,"figures/Suppl Fig 3_classes_heatmap comorbidity_",Sys.Date(),".png"), width = 10, height = 10)
+ggsave(paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_",Sys.Date(),".png"), width = 10, height = 10)
 
 rm(pdat, pdat2)
 
 ##  Supplementary Figure 2) heatmap cross utilisation --> to be added by Kilian
 #   .............................................
 
+pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|sex|age"]])
+
+dat_tmp = read_csv(here("input", "data_for_supp_fig_2.csv"))
+
+lookup = c("REHAB" = "reha",
+           "PSYCH-BRIEF" = "psych_short", 
+           "INPAT-STANDARD" = "inpat",
+           "COUNSEL" = "bado",
+           "PSYCH-LONG" = "psych_full",
+           "PHARMA" = "medi",
+           "INPAT-INTENSIVE" = "qwt"
+)
+
+# helper function  
+get_overlap = function(dat,
+                       cls,
+                       var1,
+                       var2,
+                       perspective = c("class", "intervention")){
+  
+  
+  perspective = match.arg(perspective)
+  if(perspective == "class"){
+    overlaps = dat %>%
+      ungroup() %>% 
+      filter(predclass == cls) %>% 
+      select(pragmaid, all_of(c(var1,var2))) %>% 
+      group_by(pragmaid) %>% 
+      summarize(overlap = all(pick(var1),  pick(var2)))
+  }
+  else{
+    dat = dat[c(dat[var1] == TRUE), ]
+    overlaps = dat %>%
+      ungroup() %>% 
+      filter(predclass == cls) %>% 
+      select(pragmaid, all_of(c(var1,var2))) %>% 
+      group_by(pragmaid) %>% 
+      summarize(overlap = all(pick(var1),  pick(var2)))
+  }
+  
+  overlap = sum(overlaps$overlap)/nrow(overlaps)
+  
+  # res = data.frame(var = var1, val = overlap) 
+  # names(res)[2] = var2
+  return(overlap)
+}
+# helper function end
+
+# helper function
+get_inter_variable_overlaps = function(dat,
+                                       cls,
+                                       analysis_vars,
+                                       perspective =  c("class", "intervention")){
+  
+  perspective = match.arg(perspective)
+  
+  
+  resresres = data.frame()
+  for(v1 in analysis_vars){
+    resres = data.frame(var = v1)
+    
+    for(v2 in analysis_vars){
+      res = data.frame(val = get_overlap(dat,
+                                         cls,
+                                         v1,
+                                         v2,
+                                         perspective = perspective))
+      names(res) = v2
+      resres = cbind(resres, res)
+    }
+    
+    resresres = rbind(resresres, resres)
+  }
+  resresres$predclass = cls
+  return(resresres)
+}
+
+
+
+
+overlaps_class_persp = map_dfr(unique(dat_tmp$predclass),
+                               ~ get_inter_variable_overlaps(
+                                 dat_tmp,
+                                 cls =.x, 
+                                 analysis_vars = names(lookup),
+                                 perspective = "class"))
+
+
+overlaps_interv_persp = map_dfr(unique(dat_tmp$predclass), 
+                                ~ get_inter_variable_overlaps(
+                                  dat_tmp,
+                                  cls =.x, 
+                                  analysis_vars = names(lookup),
+                                  perspective = "intervention"))
+
+
+remove_zero_perc = function(x){
+  if_else(x == "0%", "", x)
+}
+
+heatmap_pal = viridis::viridis_pal(begin = 0.2, direction = -1)
+cols = c("white", heatmap_pal(99))
+
+
+overlaps_class_persp %>%
+  pivot_longer(cols = all_of(names(lookup)),
+               names_to = "var2", 
+               values_to = "val") %>% 
+  mutate(var = as.factor(var), var2 = as.factor(var2)) %>% 
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val*100)) +
+  geom_tile() +
+  facet_wrap(~ predclass, scales = "free") +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%") %>% remove_zero_perc()), size = 2) +
+  scale_fill_viridis_c() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 5),
+        axis.text.y = element_text(size = 5),
+        legend.position = "bottom") +
+  scale_x_discrete(limits = rev(levels(var))) +
+  labs(x = "Further Interventions",
+       y = "Intervention", 
+       fill = "Fraction of Class[%]") +
+  scale_fill_gradientn(guide = guide_colorbar(
+    theme = theme(
+      legend.key.width = unit(10, "cm"),
+      legend.key.height = unit(.2, "cm"), 
+      legend.title = element_text(size = 10, vjust = 1.1), 
+    )),
+    colours  = cols)
+
+ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_class_perspektive",Sys.Date(),".png"), width = 10, height = 6)
+
+overlaps_interv_persp %>%
+  pivot_longer(cols = all_of(names(lookup)),
+               names_to = "var2", 
+               values_to = "val") %>% 
+  mutate(var = as.factor(var), var2 = as.factor(var2), 
+         val = ifelse(is.nan(val), 0, val)) %>% 
+  ggplot(aes(x = reorder(var, desc(var)), y = var2, fill = val*100)) +
+  geom_tile() +
+  facet_wrap(~predclass) +
+  geom_text(aes(label = paste0(round(val * 100, 0), "%") %>% remove_zero_perc()), size = 2) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 7),
+        axis.text.y = element_text(size = 7), 
+        legend.position = "bottom", 
+        strip.text = element_text(size = 10)) +
+  scale_x_discrete(limits = rev(levels(var))) +
+  labs(x = "Primary Intervention",
+       y = "Further Interventions",
+       fill = "Persons with intervention X who also used Y [%]") +
+  scale_fill_gradientn(guide = guide_colorbar(
+    theme = theme(
+      legend.key.width = unit(6, "cm"),
+      legend.key.height = unit(.2, "cm"), 
+      legend.title = element_text(size = 10, vjust = 1.1), 
+    )),
+    colours  = cols)
+
+
+ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_intervention_perspektive",Sys.Date(),"png"), width = 10, height = 6)
+
+
+rm(dat_tmp)
+rm(overlaps_class_persp)
+rm(overlaps_interv_persp)
+rm(lookup)
 
 ##  Supplementary Figure 3) distribution age and sex by class
 #   .............................................
@@ -447,4 +755,29 @@ ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
 ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
 
 rm(pdat)
+
+
+##  Supplementary Figure 5) distribution comorbidity by class
+#   .............................................
+
+pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|elix_sum_nomental"]])
+pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
+
+pdat[, mean := mean(elix_sum_nomental), by = class_rev]
+
+ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
+  geom_violin() +
+  geom_point(aes(y = mean), size = 3, shape = 25, fill = "black") +
+  scale_fill_viridis_d("", guide = "none") +
+  coord_flip() +
+  theme(legend.position = "bottom") +
+  scale_x_discrete("") + 
+  scale_y_continuous("Sum Score Elixhauser Comorbidity Index (0-27)")
+
+ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
+
+rm(pdat)
+
+
+
 
