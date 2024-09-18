@@ -63,8 +63,8 @@ classnum = 6# Which model should be used for subsequent analysis? (number equals
 ```{r}
 
 
-dat = read_rds(here("input","sequence_data_240528","4_data_AUD diagnosis and intervention sequences_2024-05-28.rds")) 
-dat_cov =  read_rds(here("input", "sequence_data_240528","input data_person level.RDS"))
+dat = read_rds(here("input","4_data_AUD diagnosis and intervention sequences_2024-05-28.rds")) 
+dat_cov =  read_rds(here("input", "input data_person level.RDS"))
 
 # create an interv_id running within treatment type instead of across treatment types
 dat = dat %>% left_join(dat %>%  
