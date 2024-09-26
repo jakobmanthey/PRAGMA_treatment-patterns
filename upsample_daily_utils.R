@@ -23,11 +23,11 @@ rename_span_treatments = function(vars){
 get_point_vars = function(dat){
   pointvars = dat %>%
       group_by(interv.type) %>% 
-      select(date.interv.start, date.interv.end) %>%
+      dplyr::select(date.interv.start, date.interv.end) %>%
       drop_na() %>%
       summarize(is_pointvar = all(date.interv.start == date.interv.end)) %>%
       filter(is_pointvar == T) %>% 
-      select(interv.type) %>% 
+      dplyr::select(interv.type) %>% 
       pull()
   return(pointvars)
 }
@@ -36,11 +36,11 @@ get_point_vars = function(dat){
 get_span_vars = function(dat){
   spanvars = dat %>%
     group_by(interv.type) %>% 
-  select(date.interv.start, date.interv.end) %>%
+  dplyr::select(date.interv.start, date.interv.end) %>%
     drop_na() %>%
     summarize(is_pointvar = all(date.interv.start == date.interv.end)) %>%
     filter(is_pointvar == F) %>% 
-    select(interv.type) %>% 
+    dplyr::select(interv.type) %>% 
     pull()
   return(spanvars)
 }
@@ -71,7 +71,7 @@ widen_sequence_data = function(dat, # data as in sequence_data_for_kilian_xyz (w
                             interv_id),
                 names_from = interv.type,
                 values_from = c(date.interv.start, date.interv.end)) %>% 
-    select(-{{varnames_exclude}})  %>% 
+    dplyr::select(-{{varnames_exclude}})  %>% 
     group_by(pragmaid) %>% 
     mutate(interv.any.overall = any(interv.any)) %>% 
     rename_with(rename_span_treatments, all_of(varnames_span)) %>% 
@@ -213,7 +213,7 @@ upsample_daily_by_id = function(spl, variables_span, variables_point){
 # tst_res = upsample_daily_by_id(tst, variables_span, variables_point)
 # tst_resres = left_join(tst_yearly, tst_res)
 # # expect 89 and 497 respectively
-# tst_resres %>% select(all_of(variables_span), medi) %>% sum(na.rm=T)
+# tst_resres %>% dplyr::select(all_of(variables_span), medi) %>% sum(na.rm=T)
 
 
 # this function creates a dataframe with the according timesteps and relative time scale grouping variables for the subsequent
@@ -225,9 +225,9 @@ get_person_timesteps = function(person,
   resol = match.arg(resol)
   #TODO: Implement event handling so not only aud but also any intervention works as event
   aud_date = person %>% filter(period == period_duration) %>% 
-    select(date.aud, date.period.end) %>%
+    dplyr::select(date.aud, date.period.end) %>%
     distinct()
-  id = person %>% select(pragmaid) %>% distinct() %>% pull()
+  id = person %>% dplyr::select(pragmaid) %>% distinct() %>% pull()
   
   
   
@@ -281,7 +281,7 @@ num_days = length(daterange)
 
 # yearly = tibble(pragmaid = rep(indivs, each = num_days),
 #                 date = rep(daterange, times = num_indivs)) %>%
-#   left_join(dat %>% select(pragmaid),
+#   left_join(dat %>% dplyr::select(pragmaid),
 #             by = c("pragmaid"="pragmaid"),
 #             multiple = "any")
 # Split data for core distribution and run helper function over it
@@ -385,7 +385,7 @@ extract_treatment_series = function(dat,
   resol = match.arg(resol)
   event = match.arg(event)
   ids = dat %>%
-    select(pragmaid) %>%
+    dplyr::select(pragmaid) %>%
     unique() %>%
     pull() 
   
@@ -493,7 +493,7 @@ venngardium_leviosa = function(dat, varname, class, limit = NULL, showplot = F){
     for(step in unique(dat$rel_time)){
       res[[paste0(varname, "_",step)]] = dat %>%
         filter(rel_time == step, !!var == T, predclass == class) %>% 
-        select(pragmaid) %>%
+        dplyr::select(pragmaid) %>%
         pull()
     }
     return(res)
@@ -585,7 +585,7 @@ smallest_class = function(predclass, type = c("n", "rel")){
     summarize(n = n()) %>% 
     ungroup() %>% 
     mutate(rel = n/sum(n)) %>% 
-    select(all_of(type)) %>% min()
+    dplyr::select(all_of(type)) %>% min()
   if(type == "rel") res = round(res*100, 1)
   return(res)
 }
@@ -611,7 +611,7 @@ smallest_lcprob = function(m){
     ungroup() %>% 
     mutate(maxprob = round(maxprob*100, 1)) %>% 
     filter(maxprob == min(maxprob)) %>% 
-    select(maxprob) %>% pull()
+    dplyr::select(maxprob) %>% pull()
   
 }
 
@@ -635,7 +635,7 @@ mean_lcprob = function(m){
     ungroup() %>% 
     mutate(maxprob = round(maxprob*100, 1)) %>% 
     summarize(meanprob = mean(maxprob)) %>% 
-    select(meanprob) %>% 
+    dplyr::select(meanprob) %>% 
     pull()
   
 }

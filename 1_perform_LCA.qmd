@@ -68,7 +68,7 @@ dat_cov =  read_rds(here("input", "sequence_data_240528","input data_person leve
 
 # create an interv_id running within treatment type instead of across treatment types
 dat = dat %>% left_join(dat %>%  
-  select(pragmaid, period, interv.type, interv_id) %>%
+  dplyr::select(pragmaid, period, interv.type, interv_id) %>%
   drop_na() %>%
   group_by(pragmaid, period, interv.type) %>%
   mutate(interv_id_inner = 1:n()) %>%
@@ -90,7 +90,7 @@ dat_qwt = get_treatment_series_at_resolution(dat,
                                              render = T, # forces load without prompting (ovverrides prompt and just chooses the most likely one)
                                              only_intervs = T) %>% 
   filter(interv.any.allquarters == T) %>%  # only use cases where an intervention happened because LCA has problems fitting all the zero cases
-  left_join(dat_cov %>% select(pragmaid, all_of(covariates)), by =c("pragmaid" = "pragmaid"))
+  left_join(dat_cov %>% dplyr::select(pragmaid, all_of(covariates)), by =c("pragmaid" = "pragmaid"))
 
 
 ```
@@ -103,7 +103,7 @@ dat_qwt_wide = dat_qwt %>%
   group_by(pragmaid, rel_time) %>% 
   mutate(psych = any(psych_short, psych_full)) %>%
   ungroup() %>% 
-  select(pragmaid,
+  dplyr::select(pragmaid,
          rel_time, 
          all_of(analysis_vars), 
          all_of(covariates)
@@ -137,7 +137,7 @@ f  = as.formula(paste0("cbind(",paste(analysis_vars, collapse = ","), ")~1" ))
 dat_qwt_num = dat_qwt %>%
   group_by(pragmaid) %>%
   summarize_at(analysis_vars, ~any(.x) + 1) %>% 
-   left_join(dat_cov %>% select(pragmaid, all_of(covariates)), by =c("pragmaid" = "pragmaid")) 
+   left_join(dat_cov %>% dplyr::select(pragmaid, all_of(covariates)), by =c("pragmaid" = "pragmaid")) 
 
 
 set.seed(341)
@@ -164,7 +164,7 @@ if(classnum == 6){
     }
 
 dat_qwt_num %>% 
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   write_csv(here("output", 
                  paste0("1_sequence_data_24m_monthly_lca_results_",Sys.Date(),".csv")))
 
@@ -183,7 +183,7 @@ mc7 = poLCA::poLCA(fc, dat_qwt_num, nclass = 7, graph = T, maxiter = 100000, nre
 
 dat_qwt_num$predclassC = eval(parse(text = paste0("mc", classnum, "$predclass")))
 dat_qwt_num %>%
-  select(pragmaid, predclass, predclassC) %>%
+  dplyr::select(pragmaid, predclass, predclassC) %>%
   write_csv(here("output",
                  paste0("1_sequence_data_24m_monthly_lca_results_",Sys.Date(),".csv")))
 
@@ -276,12 +276,12 @@ frac = data.frame(pragmaid = dat$pragmaid, predclass = dat$predclass %>% as.fact
   )
   
   }
-  names(res) = frac %>% select(predclass) %>% pull()
+  names(res) = frac %>% dplyr::select(predclass) %>% pull()
   return(res) 
 }
 
 dat_qwt_num %>%
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   left_join(dat_qwt) %>%
   group_by(predclass, rel_time) %>% 
   summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x) ) %>% 
@@ -305,7 +305,7 @@ Looking at the variables from a group perspective results in the following plot:
 #dat_qwt_num$predclass <- factor(dat_qwt_num$predclass, levels = c(4,2,1,3,5,6))
 
 dat_qwt_num %>%
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   left_join(dat_qwt) %>% 
   group_by(predclass, rel_time) %>% 
   summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 
@@ -340,7 +340,7 @@ replace_interv = function(interv_col){
 
 
 dat_pred = dat_qwt_num %>%
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   right_join(dat %>%
               filter(period == obs_period,
                      !is.na(interv_id_inner),
@@ -375,7 +375,7 @@ repeated_intervs = dat_pred %>%
 repeated_intervs %>% 
   ggplot(aes(x = interv.type, y = frac * 100)) +
   geom_col(aes(fill = more_than_one_interv)) +
-  geom_text(aes(x = interv.type, y = 90,label = paste0(class_frac, "%")), data = repeated_intervs %>% select(predclass, interv.type, class_frac) %>% distinct() ) +
+  geom_text(aes(x = interv.type, y = 90,label = paste0(class_frac, "%")), data = repeated_intervs %>% dplyr::select(predclass, interv.type, class_frac) %>% distinct() ) +
   facet_wrap(~ predclass) +
   labs(x = "Intervention type", y = "Patients within intervention [%]", fill = "Intervention repetitions") + 
   coord_flip() + 
@@ -405,7 +405,7 @@ lookup = c("REHAB" = "reha",
 )
 
 dat_pred2 = dat_pred %>%
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   distinct() %>%
   right_join(dat_qwt %>%
   group_by(pragmaid) %>%
@@ -427,7 +427,7 @@ get_overlap = function(dat,
   overlaps = dat %>%
     ungroup() %>% 
     filter(predclass == cls) %>% 
-    select(pragmaid, all_of(c(var1,var2))) %>% 
+    dplyr::select(pragmaid, all_of(c(var1,var2))) %>% 
     group_by(pragmaid) %>% 
     summarize(overlap = all(pick(var1),  pick(var2)))
   }
@@ -436,7 +436,7 @@ get_overlap = function(dat,
     overlaps = dat %>%
     ungroup() %>% 
     filter(predclass == cls) %>% 
-    select(pragmaid, all_of(c(var1,var2))) %>% 
+    dplyr::select(pragmaid, all_of(c(var1,var2))) %>% 
     group_by(pragmaid) %>% 
     summarize(overlap = all(pick(var1),  pick(var2)))
   }
@@ -597,7 +597,7 @@ classprobs %>% group_by(predclass, LC) %>% summarize(meanprob = mean(prob)) %>%
 ```{r, include = F}
 
 
-dat_pred = dat_qwt_num %>% select(pragmaid, predclass) %>% right_join(dat_qwt)
+dat_pred = dat_qwt_num %>% dplyr::select(pragmaid, predclass) %>% right_join(dat_qwt)
 
 lookup =  dat_pred %>% group_by(predclass) %>% summarize(n_ids=n_distinct(pragmaid))
   
@@ -609,7 +609,7 @@ dat_pred %>%
   summarize(n = n()) %>% left_join(lookup, by = c("predclass" ="predclass")) %>% 
   ungroup() %>% 
   mutate(frac = n/n_ids) %>% 
-  select(var,n_treats, predclass, frac) %>% 
+  dplyr::select(var,n_treats, predclass, frac) %>% 
   ggplot(aes(x = n_treats, y = var, fill = frac)) +
   geom_tile() + facet_wrap(~predclass, scales = "free") +
   geom_text(aes(label = paste0(round(frac * 100, 0), "%")), size = 2) +
@@ -626,7 +626,7 @@ Display the same information with a Heatmap
 
 # create a heatmap of the binary data used in the LCA
 dat_qwt_num %>%
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   left_join(dat_qwt) %>% 
   group_by(predclass, rel_time) %>% 
   summarize_at(all_of(analysis_vars), ~ round(sum(.x)/length(.x), 3)*100, ) %>% 
@@ -724,7 +724,7 @@ dat_qwt_wide = dat_qwt_wide %>%
   mutate(cluster = cuts)
 
 dat_qwt_wide %>%
-  select(pragmaid, cluster) %>% 
+  dplyr::select(pragmaid, cluster) %>% 
   left_join(dat_qwt) %>% 
   group_by(cluster, rel_time) %>% 
   summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 
@@ -765,12 +765,12 @@ frac = data.frame(pragmaid = dat$pragmaid, cluster = dat$cluster %>% as.factor()
   )
   
   }
-  names(res) = frac %>% select(predclass) %>% pull()
+  names(res) = frac %>% dplyr::select(predclass) %>% pull()
   return(res) 
 }
 
 dat_qwt_wide %>%
-  select(pragmaid, cluster) %>% 
+  dplyr::select(pragmaid, cluster) %>% 
   left_join(dat_qwt) %>% 
   group_by(cluster, rel_time) %>% 
   summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 
@@ -789,12 +789,12 @@ dat_qwt_wide %>%
 
 dat_qwt_sum = dat_qwt_sum %>% 
   left_join(dat_qwt_wide %>% 
-              select(pragmaid, cluster)) %>% 
+              dplyr::select(pragmaid, cluster)) %>% 
   rename(c(predclass = "cluster"))
 
 
 dat_pred = dat_qwt_sum %>%
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   right_join(dat %>%
               filter(period == obs_period,
                      !is.na(interv_id_inner),
@@ -829,7 +829,7 @@ dat_pred %>%
 ```{r}
  
 dat_pred2 = dat_pred %>%
-  select(pragmaid, predclass) %>%
+  dplyr::select(pragmaid, predclass) %>%
   distinct() %>% 
   right_join(dat_qwt %>%
   group_by(pragmaid) %>%
@@ -849,7 +849,7 @@ get_overlap = function(dat,
   overlaps = dat %>%
     ungroup() %>% 
     filter(predclass == cls) %>% 
-    select(pragmaid, all_of(c(var1,var2))) %>% 
+    dplyr::select(pragmaid, all_of(c(var1,var2))) %>% 
     group_by(pragmaid) %>% 
     summarize(overlap = all(pick(var1),  pick(var2)))
   }
@@ -858,7 +858,7 @@ get_overlap = function(dat,
     overlaps = dat %>%
     ungroup() %>% 
     filter(predclass == cls) %>% 
-    select(pragmaid, all_of(c(var1,var2))) %>% 
+    dplyr::select(pragmaid, all_of(c(var1,var2))) %>% 
     group_by(pragmaid) %>% 
     summarize(overlap = all(pick(var1),  pick(var2)))
   }
@@ -967,7 +967,7 @@ Finally a Heatmap, basicly containing the same information as the plot above
 # create a heatmap of the binary data used in the LCA
 dat_qwt_wide %>%
   mutate(cluster = cuts) %>%
-  select(pragmaid, cluster) %>% 
+  dplyr::select(pragmaid, cluster) %>% 
   left_join(dat_qwt) %>% 
   group_by(cluster, rel_time) %>% 
   summarize_at(all_of(analysis_vars), ~ sum(.x)/length(.x), ) %>% 

@@ -23,6 +23,11 @@ inpath <- paste0("input/")
 outpath <- paste0("output/")
 
 # load libraries
+
+#library(poLCA) # this fixes the bug that 1_perform_LCA.qmd doesnt run after this script is executed. 
+# The Problem here is that poLCA loads MASS::select() which masks dplyr::select(). The only options i can think of to 
+# fix this right now is to always load MASS::select() before loading tidyverse, so dplyr isnt masked, or to add dplyr::select() 
+#  to all tidyverse select calls in all scripts. -- UPDATE: I opted for putting dplyr::select() in all tidyverse calls.
 library(tidyverse) 
 library( nnet )
 library( kableExtra )
@@ -199,6 +204,7 @@ write.csv(out,
           row.names = F)
 
 ## 6) Multinomial Regression Analysis of Covariate influence on Latent Class Memberships
+# Supplementary Table 2
 # -------------------------------------------------------
 
 
@@ -207,7 +213,7 @@ covariates = c("pragmaid","class_lab2", "predclass", "emp.type", "age", "sex", "
 dat4 = readr::read_rds(here("input", "sequence_data_240528","input data_person level.RDS"))
 
 dat4 = dat4 %>%
-  select(all_of(covariates)) %>%
+  dplyr::select(all_of(covariates)) %>%
   mutate(sex = as.factor(sex),
          emp.type = as.factor(emp.type),
          nationality = as.factor(nationality),
@@ -228,7 +234,7 @@ sm
 
 z = summary(mod_fit)$coefficients/summary(mod_fit)$standard.errors
 p = (1 - pnorm(abs(z), 0, 1)) * 2
-p %>% round(digits = 3) %>% print() #%>% knitr::kable() %>% print() #%>% kableExtra::save_kable(here("output", "multinom_regression_p_values.html"))
+p = p %>% round(digits = 3) %>%  as.data.frame() %>% write_csv(here("output", "Supp Tab 2_1_p_values.csv"))
 
 # Risk Ratios
 rs = exp(coef(mod_fit)) %>% as.data.frame() 
@@ -236,9 +242,9 @@ rs %>% mutate(LC = rownames(rs), .before = "(Intercept)") %>%
   pivot_longer(cols =  !c("(Intercept)", "LC"),
                names_to = "Independent Variable", 
                values_to = "Exp(coeffitient") %>%
-   print() #%>% kableExtra::save_kable(here("output", "multinom_regression_exp_coefficients.html"))
+  write_csv(here("output", "Supp Tab 2_2_RiskRatio_values.csv"))
 
-round(exp(confint(mod_fit)),3) %>% print() #%>% knitr::kable() %>% print()# %>% kableExtra::save_kable(here("output", "multinom_regression_confidence_intervals.html"))
+round(exp(confint(mod_fit)),3) %>% as.data.frame() %>% write_csv(here("output", "Supp Tab 2_3_confidence_intervals.csv"))#%>% knitr::kable() %>% print()# %>% kableExtra::save_kable(here("output", "multinom_regression_confidence_intervals.html"))
 })
 
 
@@ -463,7 +469,7 @@ repeated_intervs = dat_tmp %>%
 repeated_intervs %>% 
   ggplot(aes(x = interv.type, y = frac * 100)) +
   geom_col(aes(fill = more_than_one_interv)) +
-  geom_text(aes(x = interv.type, y = 90,label = paste0(class_frac, "%")), data = repeated_intervs %>% select(predclass, interv.type, class_frac) %>% distinct() ) +
+  geom_text(aes(x = interv.type, y = 90,label = paste0(class_frac, "%")), data = repeated_intervs %>% dplyr::select(predclass, interv.type, class_frac) %>% distinct() ) +
   facet_wrap(~ predclass) +
   labs(x = "Intervention type", y = "Patients within intervention [%]", fill = "Intervention repetitions") + 
   coord_flip() + 
@@ -540,7 +546,7 @@ get_overlap = function(dat,
     overlaps = dat %>%
       ungroup() %>% 
       filter(predclass == cls) %>% 
-      select(pragmaid, all_of(c(var1,var2))) %>% 
+      dplyr::select(pragmaid, all_of(c(var1,var2))) %>% 
       group_by(pragmaid) %>% 
       summarize(overlap = all(pick(var1),  pick(var2)))
   }
@@ -549,7 +555,7 @@ get_overlap = function(dat,
     overlaps = dat %>%
       ungroup() %>% 
       filter(predclass == cls) %>% 
-      select(pragmaid, all_of(c(var1,var2))) %>% 
+      dplyr::select(pragmaid, all_of(c(var1,var2))) %>% 
       group_by(pragmaid) %>% 
       summarize(overlap = all(pick(var1),  pick(var2)))
   }
