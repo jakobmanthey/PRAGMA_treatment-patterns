@@ -429,10 +429,10 @@ local({
 
 local({
   covariates = c("pragmaid","class_lab2", "predclass", "emp.type", "age", "sex", "nationality", "income")
-  dat4 = readr::read_rds(here("input", "input data_person level.RDS"))
+  dat4 = readr::read_rds(here("input","input data_person level.RDS"))
   
   dat4 = dat4 %>%
-    select(all_of(covariates)) %>%
+    dplyr::select(all_of(covariates)) %>%
     mutate(sex = as.factor(sex),
            emp.type = as.factor(emp.type),
            nationality = as.factor(nationality),
@@ -453,7 +453,7 @@ local({
   
   z = summary(mod_fit)$coefficients/summary(mod_fit)$standard.errors
   p = (1 - pnorm(abs(z), 0, 1)) * 2
-  p %>% round(digits = 3) %>% print() #%>% knitr::kable() %>% print() #%>% kableExtra::save_kable(here("output", "multinom_regression_p_values.html"))
+  p = p %>% round(digits = 3) %>%  as.data.frame() %>% write_csv(here("output/tables/", "SUPP_TAB2_1_p_values.csv"))
   
   # Risk Ratios
   rs = exp(coef(mod_fit)) %>% as.data.frame() 
@@ -461,13 +461,11 @@ local({
     pivot_longer(cols =  !c("(Intercept)", "LC"),
                  names_to = "Independent Variable", 
                  values_to = "Exp(coeffitient") %>%
-    print() #%>% kableExtra::save_kable(here("output", "multinom_regression_exp_coefficients.html"))
+    write_csv(here("output/tables/", "SUPP_TAB2_2_RiskRatio_values.csv"))
   
-  round(exp(confint(mod_fit)),3) %>% print() #%>% knitr::kable() %>% print()# %>% kableExtra::save_kable(here("output", "multinom_regression_confidence_intervals.html"))
+  round(exp(confint(mod_fit)),3) %>% as.data.frame() %>% write_csv(here("output/tables/", "SUPP_TAB2_3_confidence_intervals.csv"))#%>% knitr::kable() %>% print()# %>% kableExtra::save_kable(here("output", "multinom_regression_confidence_intervals.html"))
 })
 
-
-####  EXPORT SUPP_TAB2 ?!
 
 ##  3) SUPPLEMENTARY TABLE 3
 #   .............................................
