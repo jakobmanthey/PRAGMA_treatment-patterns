@@ -417,7 +417,7 @@ local({
                                       smallest_lcprob(m7))
   )
   
-  sumtab %>% write_csv("output/tables/", paste0("SUPP_TAB1_Model_Selection_", Sys.Date(), ".csv"))
+  sumtab %>% write_csv(paste0("output/tables/","SUPP_TAB1_Model_Selection_", Sys.Date(), ".csv"))
   
 })
 
@@ -519,7 +519,7 @@ ggsave(paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_",Sys.Dat
 
 rm(pdat, pdat2)
 
-##  Supplementary Figure 2) heatmap cross utilisation --> to be added by Kilian
+##  Supplementary Figure 2) heatmap cross utilisation
 #   .............................................
 
 pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|sex|age"]])
@@ -651,7 +651,7 @@ overlaps_class_persp %>%
     )),
     colours  = cols)
 
-ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_class_perspektive",Sys.Date(),".png"), width = 10, height = 6)
+ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_class_perspective_",Sys.Date(),".png"), width = 10, height = 6)
 
 overlaps_interv_persp %>%
   pivot_longer(cols = all_of(names(lookup)),
@@ -665,7 +665,7 @@ overlaps_interv_persp %>%
   geom_text(aes(label = paste0(round(val * 100, 0), "%") %>% remove_zero_perc()), size = 2) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 7),
         axis.text.y = element_text(size = 7), 
-        legend.position = "bottom", 
+        legend.position = "bottom", legend.direction = "horizontal",
         strip.text = element_text(size = 10)) +
   scale_x_discrete(limits = rev(levels(var))) +
   labs(x = "Primary Intervention",
@@ -675,13 +675,12 @@ overlaps_interv_persp %>%
     theme = theme(
       legend.key.width = unit(6, "cm"),
       legend.key.height = unit(.2, "cm"), 
-      legend.title = element_text(size = 10, vjust = 1.1), 
+      legend.title = element_text(size = 10, vjust = 1.1)
     )),
     colours  = cols)
 
 
-ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_intervention_perspektive",Sys.Date(),"png"), width = 10, height = 6)
-
+ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_intervention_perspective_",Sys.Date(),".png"), width = 10, height = 6)
 
 rm(dat_tmp)
 rm(overlaps_class_persp)
@@ -777,7 +776,4 @@ ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
 ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
 
 rm(pdat)
-
-
-
 
