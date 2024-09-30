@@ -34,7 +34,7 @@ library( stringr )
 library( lubridate )
 library( here )
 
-here::i_am("3_sample and sequence description.R")
+here::i_am("2_sample and sequence description.R")
 # themes and options
 theme_set( theme_gdocs() )
 options(scipen = 999)
@@ -314,7 +314,7 @@ ggplot(pdat, aes(x = rel_time, y = dv, col = intervention)) +
   guides(color = guide_legend(ncol = 4, nrow = 2))
 
 ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".png"), width = 12, height = 6)
-ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".tiff"), width = 12, height = 6)
+ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".tiff"), width = 12, height = 6, dpi = 600)
 
 rm(pdat)
 
@@ -359,8 +359,8 @@ repeated_intervs %>%
         axis.title.y = element_text(size = 15))
 
 
-ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot",Sys.Date(),".png"), width = 12, height = 6)
-ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot",Sys.Date(),".tiff"), width = 12, height = 6)
+ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot_",Sys.Date(),".png"), width = 12, height = 6)
+ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot_",Sys.Date(),".tiff"), width = 12, height = 6, dpi = 600)
 
 rm(dat_tmp)
 rm(repeated_intervs)
