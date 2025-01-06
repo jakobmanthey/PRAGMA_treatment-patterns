@@ -76,6 +76,15 @@ filename <- paste0(inpath,"input data_elixhauser detailed data.RDS")
 elix.dat <- readRDS(filename)
 rm(filename)
 
+##  4) SETTING/DIAGNOSES DESCRIPTION DATA
+# -------------------------------------------------------
+
+filename <- paste0(inpath,"input data_diagnostic description data.RDS")
+desc.dat <- readRDS(filename)
+rm(filename)
+
+
+
 
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
@@ -176,6 +185,24 @@ data[, nat_deutsch := nationality == "deutsch"]
 data[, age_z := (age-mean(age))/sd(age)]
 
 
+##  6) For peer-review
+# -------------------------------------------------------
+
+##  How many 18 year olds?
+data[age == 18]
+
+##  distribution of index diagnosis
+desc.dat[, .(.N,.N/nrow(desc.dat)), by = index_set_diag][order(N, decreasing = T)][1:10]
+##  main groups: "outpatient: F10.2" and "outpatient: F10.1"
+desc.dat[, sum(index_set_diag %in% c("outpatient: F10.2","outpatient: F10.1"))/.N, by = class]
+
+##  number of diagnoses across the 2y period
+desc.dat[, mean(n_quarter_alcdiag)]
+desc.dat[, mean(n_quarter_alcdiag), by = class][order(V1)]
+
+
+
+
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
@@ -209,7 +236,7 @@ interv.dat[interv.type == "reha" & !is.na(date.interv.start),.(n.days = date.int
 
 vars <- names(data)[names(data) %like% "sex|age$|emp.type|elix_sum_nomental|nationality"]
 
-tab1 <- rbind(data[,c(list(group = "All"), .SD),.SDcols = vars],
+tab2 <- rbind(data[,c(list(group = "All"), .SD),.SDcols = vars],
               data[interv.any == T,c(list(group = "Any intervention"), .SD),.SDcols = vars],
               data[bado == T,c(list(group = "COUNSEL"), .SD),.SDcols = vars],
               data[inpat == T,c(list(group = "INPAT-STAND"), .SD),.SDcols = vars],
@@ -219,33 +246,35 @@ tab1 <- rbind(data[,c(list(group = "All"), .SD),.SDcols = vars],
               data[psych_full == T,c(list(group = "PSYCH-FULL"), .SD),.SDcols = vars],
               data[psych_short == T,c(list(group = "PSYCH-BRIEF"), .SD),.SDcols = vars])
 
-tab1[, table(nationality)] # regroup unbekannt --> 18 cases only
-tab1[, nationality := dplyr::recode(nationality,"unbekannt" = "nicht deutsch")]
+tab2[, table(nationality)] # regroup unbekannt --> 26 cases only
+tab2[, nationality := dplyr::recode(nationality,"unbekannt" = "nicht deutsch")]
 
-tab1$group <- factor(tab1$group, levels = unique(tab1$group))
-tab1$sex <- factor(tab1$sex)
-tab1$emp.type <- factor(tab1$emp.type, 
+tab2$group <- factor(tab2$group, levels = unique(tab2$group))
+tab2$sex <- factor(tab2$sex)
+tab2$emp.type <- factor(tab2$emp.type, 
                         levels = c("employed","unemployed","retired","other"))
 
-tab1out <- tab1[, .(.N, 
+tab2out <- tab2[, .(.N, 
                     female_prop = format(sum(sex == "female")/.N * 100, digits = 3, nsmall = 1),
                     age_mean = format(mean(age), digits = 3, nsmall = 1),
                     age_iqr_low = format(quantile(age, 0.25), digits = 3, nsmall = 1),
                     age_iqr_high = format(quantile(age, 0.75), digits = 3, nsmall = 1),
                     nat_prop = format(sum(nationality == "deutsch")/.N * 100, digits = 3, nsmall = 1),
                     empl_prop = format(sum(emp.type == "employed")/.N * 100, digits = 3, nsmall = 1),
+                    unempl_prop = format(sum(emp.type == "unemployed")/.N * 100, digits = 3, nsmall = 1),
+                    retire_prop = format(sum(emp.type == "retired")/.N * 100, digits = 3, nsmall = 1),
                     elix_mean = format(mean(elix_sum_nomental), digits = 2, nsmall = 1),
                     elix_iqr_low = format(quantile(elix_sum_nomental, 0.25), digits = 3, nsmall = 1),
                     elix_iqr_high = format(quantile(elix_sum_nomental, 0.75), digits = 3, nsmall = 1)), 
                 by = group][order(N, decreasing = T)]
 
-tab1out <- tab1out[,.(group,N,female_prop,
+tab2out <- tab2out[,.(group,N,female_prop,
                       age = paste0(age_mean," (",age_iqr_low," to ",age_iqr_high,")"),
-                      empl_prop,nat_prop,
+                      empl_prop,unempl_prop,retire_prop,nat_prop,
                       elix = paste0(elix_mean," (",elix_iqr_low," to ",elix_iqr_high,")"))]
 
-write.csv(tab1out,
-          paste0(outpath,"tables/TAB1_descriptives_",Sys.Date(),".csv"),
+write.csv(tab2out,
+          paste0(outpath,"tables/TAB2_descriptives_",Sys.Date(),".csv"),
           row.names = F)
 
 ##  test any vs no intervention:
@@ -271,7 +300,7 @@ temp <- data[,c(list(group = "Any intervention"), .SD),.SDcols = c(vars,"interv.
   
 
 ##
-rm(vars, tab1, tab1out, temp)
+rm(vars, tab2, tab2out, temp)
 
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
@@ -649,7 +678,7 @@ overlaps_class_persp %>%
     )),
     colours  = cols)
 
-ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_class_perspective_",Sys.Date(),".png"), width = 10, height = 6)
+#ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_class_perspective_",Sys.Date(),".png"), width = 10, height = 6)
 
 overlaps_interv_persp %>%
   pivot_longer(cols = all_of(names(lookup)),
@@ -685,7 +714,56 @@ rm(overlaps_class_persp)
 rm(overlaps_interv_persp)
 rm(lookup)
 
-##  Supplementary Figure 3) distribution age and sex by class
+##  Supplementary Figure 3) distribution setting / diagnosis
+#   .............................................
+
+pdat <- copy(desc.dat)
+pdat <- pdat[, .N, by = index_set_diag]
+pdat[, index_set_diag := gsub("\\/"," &\n",index_set_diag)]
+
+##  UPPER PART: mosaic plot
+require( treemapify )
+
+p1 <- ggplot(pdat, aes(area = N)) +
+  geom_treemap(fill = "#1f9e89ff") +
+  geom_treemap_text(aes(label = index_set_diag),
+                    color = "black")
+
+##  LOWER PART: Bar plot
+
+pdat <- copy(desc.dat)
+pdat[, grouping := ifelse(index_set_diag %in% c("outpatient: F10.2"),index_set_diag,
+                          ifelse(index_set_diag %in% c("outpatient: F10.1"),index_set_diag,
+                                 ifelse(index_set_diag %like% c("inpatient"),"at least one inpatient AUD diagnosis", "other")))]
+pdat$grouping <- factor(pdat$grouping, levels = c("outpatient: F10.2", "outpatient: F10.1", "at least one inpatient AUD diagnosis", "other"))
+pdat[grouping %like% "inpatient", unique(index_set_diag)]
+pdat[grouping %like% "other", unique(index_set_diag)]
+
+#pdat[, n_class := .N, by = .(class)]
+#pdat <- unique(pdat[, .(prop = .N/n_class), by = .(class,class_lab2,grouping)][order(class,class_lab2,grouping)])
+
+pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
+pdat$grouping   <- factor(pdat$grouping, levels = rev(levels(pdat$grouping)))
+
+p2 <- ggplot(pdat, aes(x = class_rev, fill = grouping)) +
+  geom_bar(position = "fill") +
+  scale_fill_viridis_d("") +
+  coord_flip() +
+  theme(legend.position = "bottom") +
+  guides(fill = guide_legend(ncol = 4, nrow = 1, reverse = TRUE)) + 
+  scale_x_discrete("") + 
+  scale_y_continuous("", label = scales::percent)
+
+
+##  COMBINE
+cowplot::plot_grid(p1, p2, nrow = 2)
+
+ggsave(paste0(outpath,"figures/Suppl Fig 3_setting and diagnoses_",Sys.Date(),".png"), width = 10, height = 10)
+
+rm(pdat, p1, p2)
+
+
+##  Supplementary Figure 4) distribution age and sex by class
 #   .............................................
 
 pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|sex|age"]])
@@ -705,12 +783,12 @@ ggplot(pdat, aes(x = class_rev, y = age)) +
   theme(legend.position = "bottom") +
   coord_flip()
 
-ggsave(paste0(outpath,"figures/Suppl Fig 3_classes_sex and age_",Sys.Date(),".png"), width = 10, height = 5)
+ggsave(paste0(outpath,"figures/Suppl Fig 4_classes_sex and age_",Sys.Date(),".png"), width = 10, height = 5)
 
 rm(pdat, pdat_prop)
 
 
-##  Supplementary Figure 4) distribution employment by class
+##  Supplementary Figure 5) distribution employment by class
 #   .............................................
 
 pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|emp.type|sex"]])
@@ -727,12 +805,12 @@ ggplot(pdat, aes(x = class_rev, fill = emp.type)) +
   scale_x_discrete("") + 
   scale_y_continuous("", label = scales::percent)
 
-ggsave(paste0(outpath,"figures/Suppl Fig 4_classes_employment_",Sys.Date(),".png"), width = 10, height = 5)
+ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_employment_",Sys.Date(),".png"), width = 10, height = 5)
 
 rm(pdat)
 
 
-##  Supplementary Figure 5) distribution comorbidity by class
+##  Supplementary Figure 6) distribution comorbidity by class
 #   .............................................
 
 pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|elix_sum_nomental"]])
@@ -749,29 +827,7 @@ ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
   scale_x_discrete("") + 
   scale_y_continuous("Sum Score Elixhauser Comorbidity Index (0-27)")
 
-ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
-
-rm(pdat)
-
-
-##  Supplementary Figure 5) distribution comorbidity by class
-#   .............................................
-
-pdat <- copy(data[,.SD, .SDcols = names(data)[names(data) %like% "pragmaid|class_lab2|elix_sum_nomental"]])
-pdat$class_rev <- factor(pdat$class_lab2, levels = rev(levels(pdat$class_lab2)))
-
-pdat[, mean := mean(elix_sum_nomental), by = class_rev]
-
-ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
-  geom_violin() +
-  geom_point(aes(y = mean), size = 3, shape = 25, fill = "black") +
-  scale_fill_viridis_d("", guide = "none") +
-  coord_flip() +
-  theme(legend.position = "bottom") +
-  scale_x_discrete("") + 
-  scale_y_continuous("Sum Score Elixhauser Comorbidity Index (0-27)")
-
-ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
+ggsave(paste0(outpath,"figures/Suppl Fig 6_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
 
 rm(pdat)
 

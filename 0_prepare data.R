@@ -46,6 +46,7 @@ options(scipen = 999)
 # ______________________________________________________________________________________________________________________
 
 DATE <- "2024-05-28"
+DATE2 <- "2024-09-30"
 
 ##  1) PRAGMA-ID
 # -------------------------------------------------------
@@ -87,7 +88,7 @@ rm(filename)
 ##  6) SEQUENCE GROUPINGS
 # -------------------------------------------------------
 
-filename <- paste0(outpath,"1_sequence_data_24m_monthly_lca_results_",DATE,".csv")
+filename <- paste0(outpath,"1_sequence_data_24m_monthly_lca_results_",DATE2,".csv")
 class.dat <- data.table(read.csv(filename))
 rm(filename)
 
@@ -393,6 +394,41 @@ nrow(data) # 9491
 length(unique(data$pragmaid)) # 9491
 
 
+##  8) DIAGNOSIS AND SETTING
+#   .............................................
+
+##  SETTING AND DIAGNOSIS AT INDEX QUARTER
+desc.dat <- copy(diag.dat[icd %like% "F10" & icd_type %like% "confirmed|primary"])
+desc.dat <- merge(desc.dat, data[,.(pragmaid,date.aud)], by = c("pragmaid"))
+
+desc.dat[, yq_index := paste0(year(date.aud),"-",quarter(date.aud))]
+desc.dat[, yq_diag := paste0(year(date.diag.start),"-",quarter(date.diag.start))]
+desc.dat <- desc.dat[yq_index == yq_diag]
+
+desc.dat <- unique(desc.dat[,.(pragmaid,setting,icd)])[order(setting,icd)]
+desc.dat[, table(setting,icd)]
+desc.dat[,set_diag := paste0(setting, ": ", icd)]
+desc.dat <- desc.dat[, .(index_set_diag = paste0(set_diag, collapse = "/")), by = .(pragmaid)]
+#desc.dat[, table(index_set_diag)]
+
+##  PERSISTENCE OF DIAGNOSES DURING FOLLOW UP
+add <- copy(diag.dat[icd.alc == T & icd_type %like% "confirmed|primary"])
+add <- merge(add, data[,.(pragmaid,start = date.aud, end = date.period.end)], by = c("pragmaid"))
+
+add <- add[date.diag.start %between% list(start,end) & icd %like% "F10",.(pragmaid,setting,icd,date = date.diag.start)]
+add[, year := year(date)]
+add[, quarter := quarter(date)]
+add[, yq := paste0(year,"-",quarter)]
+add[, length(unique(yq)), by = pragmaid][V1>9] # 2 years = max 9 quarters
+
+add <- add[, .(n_quarter_alcdiag = length(unique(yq))), by = pragmaid]
+
+desc.dat <- merge(desc.dat,add, by = "pragmaid")
+
+##  ADD CLASSES
+desc.dat <- merge(data[,.(pragmaid,class,class_lab,class_lab2)], desc.dat, by = c("pragmaid"), all.x = T)
+length(unique(desc.dat$pragmaid)) # 9491
+
 
 # ==================================================================================================================================================================
 # ==================================================================================================================================================================
@@ -404,3 +440,4 @@ length(unique(data$pragmaid)) # 9491
 saveRDS(data, paste0(inpath,"input data_person level.RDS"))
 saveRDS(interv.dat, paste0(inpath,"input data_intervention level.RDS"))
 saveRDS(elix.dat, paste0(inpath,"input data_elixhauser detailed data.RDS"))
+saveRDS(desc.dat, paste0(inpath,"input data_diagnostic description data.RDS"))
