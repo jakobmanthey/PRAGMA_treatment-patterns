@@ -344,6 +344,7 @@ ggplot(pdat, aes(x = rel_time, y = dv, col = intervention)) +
 
 ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".png"), width = 12, height = 6)
 ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".tiff"), width = 12, height = 6, dpi = 600)
+ggsave(paste0(outpath,"figures/Fig 1_classes_overview over time_",Sys.Date(),".pdf"), width = 12, height = 6)
 
 rm(pdat)
 
@@ -390,6 +391,7 @@ repeated_intervs %>%
 
 ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot_",Sys.Date(),".png"), width = 12, height = 6)
 ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot_",Sys.Date(),".tiff"), width = 12, height = 6, dpi = 600)
+ggsave(paste0("output/","figures/","Fig 2_interv_repetitions_barplot_",Sys.Date(),".pdf"), width = 12, height = 6)
 
 rm(dat_tmp)
 rm(repeated_intervs)
