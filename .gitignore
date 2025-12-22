@@ -6,4 +6,6 @@ input
 output
 PRAGMA_treatment-patterns.Rproj
 old code
-FS3
+FS3/docs
+FS3/old
+FS3/out
