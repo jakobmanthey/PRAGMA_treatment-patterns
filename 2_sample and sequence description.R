@@ -545,6 +545,7 @@ ggplot(pdat2, aes(x = class_lab2, y = label, fill = percentage)) +
   theme(axis.text.x = element_text(angle = 15, hjust = 1)) 
 
 ggsave(paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_",Sys.Date(),".png"), width = 10, height = 10)
+openxlsx::write.xlsx(pdat, paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_",Sys.Date(),".xlsx"))
 
 rm(pdat, pdat2)
 
@@ -710,6 +711,12 @@ overlaps_interv_persp %>%
 
 
 ggsave(paste0("output/","figures/","Suppl Fig 2_fig_heatmap_intervention_perspective_",Sys.Date(),".png"), width = 10, height = 6)
+openxlsx::write.xlsx(overlaps_interv_persp %>%
+                       pivot_longer(cols = all_of(names(lookup)),
+                                    names_to = "var2", 
+                                    values_to = "val") %>% 
+                       mutate(var = as.factor(var), var2 = as.factor(var2), 
+                              val = ifelse(is.nan(val), 0, val)), paste0("output/","figures/","Suppl Fig 2_fig_heatmap_intervention_perspective_",Sys.Date(),".xlsx"))
 
 rm(dat_tmp)
 rm(overlaps_class_persp)
@@ -730,6 +737,8 @@ p1 <- ggplot(pdat, aes(area = N)) +
   geom_treemap(fill = "#1f9e89ff") +
   geom_treemap_text(aes(label = index_set_diag),
                     color = "black")
+
+openxlsx::write.xlsx(pdat, paste0(outpath,"figures/Suppl Fig 3_setting and diagnoses_UPPER_",Sys.Date(),".xlsx"))
 
 ##  LOWER PART: Bar plot
 
@@ -761,6 +770,7 @@ p2 <- ggplot(pdat, aes(x = class_rev, fill = grouping)) +
 cowplot::plot_grid(p1, p2, nrow = 2)
 
 ggsave(paste0(outpath,"figures/Suppl Fig 3_setting and diagnoses_",Sys.Date(),".png"), width = 10, height = 10)
+openxlsx::write.xlsx(pdat[,.N,by = .(class_rev,grouping)], paste0(outpath,"figures/Suppl Fig 3_setting and diagnoses_LOWER_",Sys.Date(),".xlsx"))
 
 rm(pdat, p1, p2)
 
@@ -786,6 +796,13 @@ ggplot(pdat, aes(x = class_rev, y = age)) +
   coord_flip()
 
 ggsave(paste0(outpath,"figures/Suppl Fig 4_classes_sex and age_",Sys.Date(),".png"), width = 10, height = 5)
+openxlsx::write.xlsx(pdat[,.(median = median(age),
+                             iqr_lower = quantile(age,0.25),
+                             iqr_upper = quantile(age,0.75))], 
+                     paste0(outpath,"figures/Suppl Fig 4_classes_sex and age_",Sys.Date(),".xlsx"))
+openxlsx::write.xlsx(pdat_prop, 
+                     paste0(outpath,"figures/Suppl Fig 4_classes_sex and age_Percentages_",Sys.Date(),".xlsx"))
+
 
 rm(pdat, pdat_prop)
 
@@ -808,6 +825,7 @@ ggplot(pdat, aes(x = class_rev, fill = emp.type)) +
   scale_y_continuous("", label = scales::percent)
 
 ggsave(paste0(outpath,"figures/Suppl Fig 5_classes_employment_",Sys.Date(),".png"), width = 10, height = 5)
+openxlsx::write.xlsx(pdat[,.N,by = .(class_rev,emp.type)], paste0(outpath,"figures/Suppl Fig 5_classes_employment_",Sys.Date(),".xlsx"))
 
 rm(pdat)
 
@@ -830,6 +848,9 @@ ggplot(pdat, aes(x = class_rev, y = elix_sum_nomental, fill = class_rev)) +
   scale_y_continuous("Sum Score Elixhauser Comorbidity Index (0-27)")
 
 ggsave(paste0(outpath,"figures/Suppl Fig 6_classes_comorbidity_",Sys.Date(),".png"), width = 9, height = 5)
+openxlsx::write.xlsx(pdat[,.(.N,mean),by = .(class_rev,elix_sum_nomental)], paste0(outpath,"figures/Suppl Fig 6_classes_comorbidity_",Sys.Date(),".xlsx"))
 
+
+pdat
 rm(pdat)
 
