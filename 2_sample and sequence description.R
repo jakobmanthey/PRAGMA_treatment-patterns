@@ -545,7 +545,55 @@ ggplot(pdat2, aes(x = class_lab2, y = label, fill = percentage)) +
   theme(axis.text.x = element_text(angle = 15, hjust = 1)) 
 
 ggsave(paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_",Sys.Date(),".png"), width = 10, height = 10)
-openxlsx::write.xlsx(pdat, paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_",Sys.Date(),".xlsx"))
+openxlsx::write.xlsx(pdat2, paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_",Sys.Date(),".xlsx"))
+
+##  dt heatmap:
+conditions <- c(
+  "Herzinsuffizienz",
+  "Herzrhythmusstörungen",
+  "Klappenerkrankungen",
+  "Pulmonale Zirkulationsstörungen",
+  "Periphere Gefäßerkrankungen",
+  "Hypertonie, unkompliziert",
+  "Hypertonie, kompliziert",
+  "Lähmungen",
+  "Andere neurologische Erkrankungen",
+  "Chronische Lungenerkrankungen",
+  "Diabetes, unkompliziert",
+  "Diabetes, kompliziert",
+  "Hypothyreose",
+  "Nierenversagen",
+  "Lebererkrankungen",
+  "Peptische Ulkuskrankheit ohne Blutung",
+  "AIDS/HIV",
+  "Lymphome",
+  "Metastasierender Krebs",
+  "Solide Tumoren ohne Metastasen",
+  "Rheumatoide Arthritis / Kollagenvaskuläre Erkrankung",
+  "Gerinnungsstörungen",
+  "Adipositas",
+  "Gewichtsverlust",
+  "Flüssigkeits- und Elektrolytstörungen",
+  "Blutvertust-Anämie",
+  "Mangel-Anämie",
+  "Alkoholmissbrauch",
+  "Drogenmissbrauch",
+  "Psychosen",
+  "Depression"
+)
+cbind(levels(pdat2$label),conditions)
+levels(pdat2$label) <- conditions
+
+ggplot(pdat2, aes(x = class_lab2, y = label, fill = percentage)) +
+  geom_tile(show.legend = F) + 
+  geom_text(aes(label = scales::percent(percentage, accuracy = 1)), color = "black") +
+  scale_fill_gradient(low = "#FFDAB9", high = "#FF0000") +
+  scale_x_discrete("") +
+  scale_y_discrete("") +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1)) 
+
+ggsave(paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_deu_",Sys.Date(),".png"), width = 10, height = 10)
+ggsave(paste0(outpath,"figures/Suppl Fig 1_classes_heatmap comorbidity_deu_",Sys.Date(),".svg"), width = 10, height = 10)
 
 rm(pdat, pdat2)
 
